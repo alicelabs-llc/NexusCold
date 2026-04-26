@@ -1,0 +1,9 @@
+__pycache__/
+build/
+dist/
+*.exe
+*.pyc
+.nexus_cache/
+*.spec
+enrich_cache.json
+__pycache__/
