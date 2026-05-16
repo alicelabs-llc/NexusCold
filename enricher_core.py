@@ -186,12 +186,16 @@ BLACKLIST_DOMAINS = {
 def random_headers():
     return {
         "User-Agent": random.choice(UA_POOL),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
     }
 
 def clean_email(e: str) -> Optional[str]:
@@ -220,7 +224,10 @@ def clean_phone(raw: str) -> Optional[str]:
     return None
 
 def extract_domain(url: str) -> Optional[str]:
+    if not url:
+        return None
     try:
+        url = url.split(' ')[0].split('?')[0].split('#')[0].rstrip('/')
         if not url.startswith('http'):
             url = 'http://' + url
         p = urlparse(url)
@@ -232,6 +239,7 @@ def extract_domain(url: str) -> Optional[str]:
 def is_valid_website(url: str) -> bool:
     if not url:
         return False
+    url = url.split(' ')[0]
     domain = extract_domain(url)
     if not domain:
         return False
@@ -305,13 +313,24 @@ async def source_ddg(session: aiohttp.ClientSession, company: str, city: str = "
             if r.status != 200:
                 return {}
             text = await r.text(errors='ignore')
-            urls = re.findall(r'class="result__url"[^>]*>([^<]+)<', text)
+
+            # Try to extract from href uddg parameter first (more reliable)
+            uddg_urls = re.findall(r'uddg=([^&"]+)', text)
+            for u in uddg_urls:
+                u = unquote(u)
+                if is_valid_website(u):
+                    return {'website': u, 'domain': extract_domain(u), 'source': 'ddg'}
+
+            # Fallback to text extraction
+            urls = re.findall(r'class="result__url"[^>]*>(.*?)<', text, re.S)
             for raw_url in urls:
-                raw_url = raw_url.strip()
+                raw_url = re.sub(r'<[^>]+>', '', raw_url).strip()
+                if not raw_url: continue
                 if not raw_url.startswith('http'):
                     raw_url = 'https://' + raw_url
                 if is_valid_website(raw_url):
                     return {'website': raw_url, 'domain': extract_domain(raw_url), 'source': 'ddg'}
+
     except:
         pass
     return {}
@@ -330,15 +349,26 @@ async def source_bing(session: aiohttp.ClientSession, company: str, city: str = 
                 return {}
             text = await r.text(errors='ignore')
             emails = [clean_email(e) for e in EMAIL_RE.findall(text) if clean_email(e)]
-            urls = re.findall(r'<cite[^>]*>([^<]+)</cite>', text)
+
+            # Expanded patterns for Bing
+            patterns = [
+                r'<cite[^>]*>([^<]+)</cite>',
+                r'<h2><a[^>]+href="([^"]+)"',
+                r'class="b_algo">.*?href="([^"]+)"'
+            ]
+
             website = ""
-            for u in urls:
-                u = u.strip()
-                if not u.startswith('http'):
-                    u = 'https://' + u
-                if is_valid_website(u):
-                    website = u
-                    break
+            for pat in patterns:
+                urls = re.findall(pat, text, re.S)
+                for u in urls:
+                    u = re.sub(r'<[^>]+>', '', u).strip()
+                    if not u.startswith('http'):
+                        u = 'https://' + u
+                    if is_valid_website(u):
+                        website = u
+                        break
+                if website: break
+
             result = {'source': 'bing'}
             if emails:
                 result['email'] = emails[0]
@@ -364,11 +394,22 @@ async def source_google(session: aiohttp.ClientSession, company: str, city: str 
             if r.status != 200:
                 return {}
             text = await r.text(errors='ignore')
-            links = re.findall(r'href="/url\?q=([^&]+)', text)
-            for l in links:
-                l = unquote(l)
-                if is_valid_website(l):
-                    return {'website': l, 'domain': extract_domain(l), 'source': 'google'}
+
+            # Expanded patterns for Google
+            patterns = [
+                r'href="/url\?q=([^&]+)',
+                r'<(?:div|span) [^>]*data-ved=[^>]*><a [^>]*href="([^"]+)"',
+                r'href="(https?://[^"]+)"[^>]*><h3'
+            ]
+
+            found = False
+            for pat in patterns:
+                links = re.findall(pat, text)
+                for l in links:
+                    l = unquote(l)
+                    if is_valid_website(l):
+                        return {'website': l, 'domain': extract_domain(l), 'source': 'google'}
+
     except:
         pass
     return {}

@@ -60,16 +60,16 @@ class AliceNexusGUI(ctk.CTk):
 
         # Sidebar Buttons
         btn_opts = {"height": 45, "anchor": "w", "font": ctk.CTkFont(size=13, weight="bold")}
-        self.btn_enrich = ctk.CTkButton(self.sidebar, text="🎯 Enrichment Engine", fg_color=self.accent_color, **btn_opts)
+        self.btn_enrich = ctk.CTkButton(self.sidebar, text="🎯 Enrichment Engine", fg_color=self.accent_color, command=lambda: self.show_view("enrich"), **btn_opts)
         self.btn_enrich.grid(row=2, column=0, padx=20, pady=8, sticky="ew")
         
-        self.btn_niche = ctk.CTkButton(self.sidebar, text="🏷️ Niche Searcher", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
+        self.btn_niche = ctk.CTkButton(self.sidebar, text="🏷️ Niche Searcher", fg_color="transparent", border_width=1, border_color=self.accent_color, command=lambda: self.show_view("niche"), **btn_opts)
         self.btn_niche.grid(row=3, column=0, padx=20, pady=8, sticky="ew")
         
-        self.btn_brain = ctk.CTkButton(self.sidebar, text="🧠 AI Brain Hub", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
+        self.btn_brain = ctk.CTkButton(self.sidebar, text="🧠 AI Brain Hub", fg_color="transparent", border_width=1, border_color=self.accent_color, command=lambda: self.show_view("brain"), **btn_opts)
         self.btn_brain.grid(row=4, column=0, padx=20, pady=8, sticky="ew")
 
-        self.btn_warmer = ctk.CTkButton(self.sidebar, text="🔥 Email Warmer", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
+        self.btn_warmer = ctk.CTkButton(self.sidebar, text="🔥 Email Warmer", fg_color="transparent", border_width=1, border_color=self.accent_color, command=lambda: self.show_view("warmer"), **btn_opts)
         self.btn_warmer.grid(row=5, column=0, padx=20, pady=8, sticky="ew")
 
         # ─── MAIN CONTENT ───
@@ -191,6 +191,33 @@ class AliceNexusGUI(ctk.CTk):
         self.log_box.grid(row=3, column=0, sticky="ew", pady=(15, 0))
 
     # --- UI Logic ---
+
+    def show_view(self, view_name):
+        # Reset colors
+        for btn in [self.btn_enrich, self.btn_niche, self.btn_brain, self.btn_warmer]:
+            btn.configure(fg_color="transparent")
+
+        # Hide main engine frame if not enrich
+        if view_name == "enrich":
+            self.btn_enrich.configure(fg_color=self.accent_color)
+            self.engine_frame.grid()
+            self.footer.grid()
+            self.header_lbl.configure(text="Lead Enrichment Engine v6.0 — WORLD EDITION")
+        else:
+            self.engine_frame.grid_remove()
+            self.footer.grid_remove()
+            if view_name == "niche":
+                self.btn_niche.configure(fg_color=self.accent_color)
+                self.header_lbl.configure(text="Niche Searcher Protocol — [PENDING IMPLEMENTATION]")
+                self.log_system("Module 'Niche Searcher' is under development.")
+            elif view_name == "brain":
+                self.btn_brain.configure(fg_color=self.accent_color)
+                self.header_lbl.configure(text="AI Brain Hub — [PENDING IMPLEMENTATION]")
+                self.log_system("Module 'AI Brain Hub' is under development.")
+            elif view_name == "warmer":
+                self.btn_warmer.configure(fg_color=self.accent_color)
+                self.header_lbl.configure(text="Email Warmer v6.0 — WORLD EDITION")
+                self.log_system("Email Warmer module selected.")
 
     def log_system(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
