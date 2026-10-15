@@ -1,9 +1,47 @@
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
 dist/
+*.egg-info/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Build artifacts
 *.exe
-*.pyc
-.nexus_cache/
 *.spec
+build_nexus.bat.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Cache files
+.nexus_cache/
 enrich_cache.json
-__pycache__/
+.pytest_cache/
+
+# Logs
+*.log
+logs/
+
+# Credentials / .env (never commit)
+.env
+.env.local
+.env.production
+*.key
+*.pem
+
+# OS
+Thumbs.db
