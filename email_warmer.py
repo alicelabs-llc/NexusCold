@@ -12,6 +12,8 @@ import asyncio
 import random
 import time
 import re
+import html
+import tempfile
 import aiohttp
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
@@ -68,7 +70,8 @@ class EmailAccount:
     smtp_server: str = "smtp.gmail.com"
     smtp_port: int = 587
     smtp_ssl: bool = False
-    password: str = ""
+    password: str = field(default="", repr=False)
+    password_env: str = ""
     display_name: str = ""
     daily_limit: int = 0  # 0 = auto-calculate
     sent_today: int = 0
@@ -93,6 +96,8 @@ class EmailAccount:
 
 @dataclass
 class WarmerConfig:
+    dry_run: bool = True
+    test_recipients: list[str] = field(default_factory=list)
     min_send_interval: int = 60       # segundos entre envios
     max_daily_per_account: int = 50   # maximo absoluto por cuenta
     ramp_speed: float = 1.0           # 0.5 = lento, 1.0 = normal, 2.0 = rapido
@@ -215,8 +220,8 @@ class EmailWarmer:
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
         # HTML version (for open tracking simulation)
-        html = body.replace("\n", "<br>\n")
-        html_body = f"""<html><body><p>{html}</p></body></html>"""
+        html_text = html.escape(body).replace("\n", "<br>\n")
+        html_body = f"""<html><body><p>{html_text}</p></body></html>"""
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
         return msg
@@ -225,28 +230,48 @@ class EmailWarmer:
         """Connect to SMTP server"""
         if account.smtp_ssl:
             context = ssl.create_default_context()
-            server = smtplib.SMTP_SSL(account.smtp_server, account.smtp_port, context=context)
+            server = smtplib.SMTP_SSL(account.smtp_server, account.smtp_port, context=context, timeout=20)
         else:
-            server = smtplib.SMTP(account.smtp_server, account.smtp_port)
+            server = smtplib.SMTP(account.smtp_server, account.smtp_port, timeout=20)
             server.starttls(context=ssl.create_default_context())
 
-        server.login(account.email, account.password)
+        credential = os.environ.get(account.password_env, "") if account.password_env else account.password
+        if not credential:
+            server.close()
+            raise ValueError("SMTP credential missing; configure password_env or provide in memory")
+        try:
+            server.login(account.email, credential)
+        except Exception:
+            server.close()
+            raise
         return server
 
     def send_email(self, account: EmailAccount, to_email: str,
                    subject: str, body: str) -> bool:
         """Send a single email via SMTP"""
+        if self.config.dry_run:
+            self.log("Dry run: no email sent")
+            return False
+        if to_email not in self.config.test_recipients:
+            self.log("Send blocked: recipient is not in test_recipients")
+            return False
+        server = None
         try:
             server = self._connect_smtp(account)
             msg = self._create_mime(account.email, to_email, subject, body)
             server.sendmail(account.email, [to_email], msg.as_string())
-            server.quit()
             account.sent_today += 1
             account.total_sent += 1
             return True
         except Exception as e:
-            self.log(f"Send failed ({account.email} → {to_email}): {e}")
+            self.log(f"Send failed ({account.email} → {to_email}): {type(e).__name__}")
             return False
+        finally:
+            if server is not None:
+                try:
+                    server.quit()
+                except Exception:
+                    server.close()
 
     async def send_warmup_email(self, account: EmailAccount) -> dict:
         """Send one warmup email"""
@@ -265,20 +290,7 @@ class EmailWarmer:
 
         success = self.send_email(account, target_email, subject, body)
 
-        # Simulate open (30% chance)
-        if success and random.random() < 0.30:
-            account.opened_today += 1
-            account.total_opened += 1
-
-        # Simulate reply (15% chance)
-        if success and random.random() < 0.15:
-            account.replied_today += 1
-            account.total_replied += 1
-
-        # Simulate bounce (2% chance - natural)
-        if success and random.random() < 0.02:
-            account.bounced_today += 1
-            account.total_bounced += 1
+        # Opens, replies and bounces require observed events; never synthesize them.
 
         return {
             "status": "sent" if success else "failed",
@@ -288,16 +300,9 @@ class EmailWarmer:
 
     def _get_honeypot_target(self, account: EmailAccount) -> Optional[str]:
         """Return a target email for warmup. Uses real addresses if available."""
-        # Generate a safe test destination
-        domain = account.email.split('@')[1]
-        # Use a temporary address or secondary inbox
-        local = account.email.split('@')[0]
-        targets = [
-            f"{local}+warmup1@{domain}",
-            f"{local}+warmup2@{domain}",
-            f"warmup.{local}@{domain}",
-        ]
-        return random.choice(targets)
+        targets = [email for email in self.config.test_recipients
+                   if email != account.email and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email)]
+        return random.choice(targets) if targets else None
 
     def _update_reputation(self, account: EmailAccount):
         """Update reputation score based on metrics"""
@@ -416,12 +421,20 @@ class EmailWarmer:
         path = path or STATE_FILE
         data = {
             "config": self.config.to_dict(),
-            "accounts": [asdict(a) for a in self.accounts],
+            "accounts": [{k: v for k, v in asdict(a).items() if k != "password"}
+                         for a in self.accounts],
             "last_save": datetime.now().isoformat(),
         }
         try:
-            with open(path, "w") as f:
-                json.dump(data, f, indent=2, default=str)
+            directory = os.path.dirname(os.path.abspath(path))
+            fd, temporary = tempfile.mkstemp(dir=directory, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, default=str)
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
         except Exception as e:
             self.log(f"Save error: {e}")
 
@@ -438,7 +451,9 @@ class EmailWarmer:
                 self.config = WarmerConfig.from_dict(data["config"])
 
             if "accounts" in data:
-                self.accounts = [EmailAccount(**a) for a in data["accounts"]]
+                self.accounts = [EmailAccount(**{k: v for k, v in a.items()
+                    if k in EmailAccount.__dataclass_fields__ and k != "password"})
+                    for a in data["accounts"]]
 
             self.log("📂 State loaded successfully")
         except Exception as e:

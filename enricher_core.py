@@ -16,10 +16,13 @@ import time
 import random
 import hashlib
 import os
+import tempfile
 from urllib.parse import quote_plus, urlparse, unquote
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from typing import Optional, Callable, List
 from pathlib import Path
+from data_quality import email_quality
+from network_safety import PublicResolver, public_http_url, public_trace_config
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -103,7 +106,11 @@ class EnrichedCompany:
     # Control
     status: str = "pending"
     sources_used: str = ""
-    confidence: int = 0
+    confidence: int = 0  # Data completeness, NOT probability of delivery
+    email_status: str = "not_checked"
+    evidence: str = "{}"
+    checked_at: str = ""
+    error: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -230,7 +237,7 @@ def extract_domain(url: str) -> Optional[str]:
         return None
 
 def is_valid_website(url: str) -> bool:
-    if not url:
+    if not url or not public_http_url(url):
         return False
     domain = extract_domain(url)
     if not domain:
@@ -238,7 +245,9 @@ def is_valid_website(url: str) -> bool:
     return domain not in BLACKLIST_DOMAINS
 
 def get_cache_key(company: EnrichedCompany) -> str:
-    raw = f"{company.company_name}|{company.city}|{company.state}|{company.country}"
+    raw = json.dumps([company.company_name.strip().casefold(), company.city.strip().casefold(),
+                      company.state.strip().casefold(), company.country.strip().upper(),
+                      company.website.strip().lower(), company.email.strip().lower()], ensure_ascii=False)
     return hashlib.md5(raw.encode()).hexdigest()
 
 def load_cache() -> dict:
@@ -251,11 +260,19 @@ def load_cache() -> dict:
     return {}
 
 def save_cache(cache: dict):
+    # Merge the latest snapshot: other async workers may have finished meanwhile.
+    current = load_cache()
+    current.update(cache)
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=CACHE_FILE.parent, suffix=".tmp")
     try:
-        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(cache, f, default=str)
-    except:
-        pass
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(current, output, default=str)
+        os.replace(temporary, CACHE_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
 
 def load_rate_limits() -> dict:
     try:
@@ -405,9 +422,9 @@ async def source_clearbit(session: aiohttp.ClientSession, company: str) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def source_website(session: aiohttp.ClientSession, website: str) -> dict:
-    if not website:
+    if not is_valid_website(website):
         return {}
-    result = {'source': 'website'}
+    result = {'source': 'website', 'evidence': {}}
     pages_to_check = [
         website,
         website.rstrip('/') + '/contact',
@@ -435,6 +452,8 @@ async def source_website(session: aiohttp.ClientSession, website: str) -> dict:
                 # Emails
                 emails = [clean_email(e) for e in EMAIL_RE.findall(text) if clean_email(e)]
                 all_emails.extend(emails)
+                for email in emails:
+                    result["evidence"].setdefault(email, []).append(str(r.url))
 
                 # Phones
                 for m in PHONE_RE.finditer(text):
@@ -559,6 +578,7 @@ async def source_website(session: aiohttp.ClientSession, website: str) -> dict:
     seen_phones = set()
     unique_phones = [p for p in all_phones if p and not (p in seen_phones or seen_phones.add(p))]
 
+    unique_emails.sort(key=lambda email: (email.split("@")[-1] != domain, email))
     if unique_emails:
         result['email'] = unique_emails[0]
         result['emails_all'] = ','.join(unique_emails[:5])
@@ -1048,16 +1068,15 @@ async def enrich_company(
     # ── Check cache ──
     cache_key = get_cache_key(company)
     cache = load_cache()
-    if cache_key in cache:
-        cached = cache[cache_key]
-        if time.time() - cached.get("ts", 0) < CACHE_TTL and cached.get("confidence", 0) >= 30:
-            for k, v in cached.items():
-                if k != "ts" and hasattr(company, k) and v and not getattr(company, k, ''):
-                    setattr(company, k, v)
-            if cached.get("confidence", 0) > company.confidence:
-                company.confidence = cached["confidence"]
-                company.status = cached.get("status", company.status)
-                company.sources_used = cached.get("sources_used", "")
+    cached = cache.get(cache_key, {})
+    if time.time() - cached.get("ts", 0) < CACHE_TTL and cached.get("confidence", 0) >= 30:
+        defaults = EnrichedCompany()
+        for item in fields(company):
+            value = cached.get(item.name)
+            existing = getattr(company, item.name)
+            if value and (not existing or existing == getattr(defaults, item.name)):
+                setattr(company, item.name, value)
+        return company
     else:
         # ── Step 1: Find domain/website (parallel: DDG, Bing, Google, Clearbit) ──
         if not company.website:
@@ -1076,8 +1095,7 @@ async def enrich_company(
                     sources_used.append(r.get('source', '?'))
                     break
 
-        # ── Step 2: Apply AI Heuristic ──
-        ai_agent_heuristic(company)
+        # Apply inference only AFTER observed fields have been merged.
 
         # ── Step 3: Website scraping + corporate data (parallel) ──
         tasks2 = [source_website(session, company.website)]
@@ -1120,13 +1138,23 @@ async def enrich_company(
                 'employees', 'revenue', 'business_type', 'company_name'
             ]:
                 val = r.get(field_name, '')
-                if val and not getattr(company, field_name, ''):
+                if val and (not getattr(company, field_name, '') or
+                            getattr(company, field_name) == getattr(EnrichedCompany(), field_name)):
                     try:
                         setattr(company, field_name, val)
                     except:
                         pass
 
-        # ── Step 4: Calculate confidence ──
+        ai_agent_heuristic(company)
+        company.email_status = email_quality(company.email, company.domain or extract_domain(company.website) or '')
+        company.checked_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        evidence = {}
+        for result in results2:
+            if isinstance(result, dict):
+                evidence.update(result.get("evidence", {}))
+        company.evidence = json.dumps(evidence, sort_keys=True)
+
+        # ── Step 4: Calculate completeness (not email verification) ──
         score = 0
         if company.website: score += 30
         if company.email: score += 25
@@ -1144,8 +1172,8 @@ async def enrich_company(
         if company.revenue: score += 3
         if company.business_type: score += 2
 
-        company.confidence = score
-        company.sources_used = ','.join(set(s for s in sources_used if s and s != '?'))
+        company.confidence = min(100, score)
+        company.sources_used = ','.join(sorted(set(s for s in sources_used if s and s != '?')))
 
         # Status
         if score >= 70:
@@ -1161,8 +1189,7 @@ async def enrich_company(
 
         # ── Save to cache ──
         if company.confidence >= 10:
-            cache[cache_key] = {**asdict(company), "ts": time.time()}
-            save_cache(cache)
+            save_cache({cache_key: {**asdict(company), "ts": time.time()}})
 
     return company
 
@@ -1182,10 +1209,14 @@ async def enrich_batch(
     progress_callback(i, total, company) se llama tras cada empresa.
     stop_flag: función que devuelve True para detener.
     """
+    if not isinstance(workers, int) or isinstance(workers, bool) or not 1 <= workers <= 100:
+        raise ValueError("workers must be an integer between 1 and 100")
+    completed = 0
     connector = aiohttp.TCPConnector(
         limit=workers,
         limit_per_host=3,
-        ssl=False,
+        ssl=True,
+        resolver=PublicResolver(),
         keepalive_timeout=30
     )
     timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
@@ -1193,19 +1224,24 @@ async def enrich_batch(
     semaphore = asyncio.Semaphore(workers)
 
     async def process_one(i: int, company: EnrichedCompany) -> EnrichedCompany:
-        if stop_flag and stop_flag():
-            return company
+        nonlocal completed
         async with semaphore:
+            if stop_flag and stop_flag():
+                company.status = "cancelled"
+                return company
             try:
                 enriched = await enrich_company(session, company)
             except Exception as e:
                 company.status = 'failed'
+                company.error = type(e).__name__
                 enriched = company
+            completed += 1
             if progress_callback:
-                progress_callback(i + 1, len(companies), enriched)
+                progress_callback(completed, len(companies), enriched)
             return enriched
 
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout,
+                                     trace_configs=[public_trace_config()]) as session:
         tasks = [process_one(i, c) for i, c in enumerate(companies)]
         results = await asyncio.gather(*tasks, return_exceptions=False)
 
