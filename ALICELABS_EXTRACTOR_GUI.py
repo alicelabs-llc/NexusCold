@@ -8,11 +8,12 @@ from datetime import datetime
 
 # Import core engine
 from enricher_core import EnrichedCompany, run_enrichment
+from data_quality import spreadsheet_safe, spreadsheet_headers
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "6.0 — WORLD EDITION"
+VERSION = "6.2 — MAILBOX CHECKS"
 
 class AliceNexusGUI(ctk.CTk):
     def __init__(self):
@@ -55,7 +56,7 @@ class AliceNexusGUI(ctk.CTk):
         self.logo_label = ctk.CTkLabel(self.sidebar, text="AliceLabs", font=ctk.CTkFont(size=28, weight="bold"), text_color=self.accent_color)
         self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 5))
         
-        self.sub_label = ctk.CTkLabel(self.sidebar, text="B2B Nexus v6.0 — WORLD EDITION", font=ctk.CTkFont(size=12), text_color="#94A3B8")
+        self.sub_label = ctk.CTkLabel(self.sidebar, text=f"B2B Nexus {VERSION}", font=ctk.CTkFont(size=12), text_color="#94A3B8")
         self.sub_label.grid(row=1, column=0, padx=20, pady=(0, 40))
 
         # Sidebar Buttons
@@ -79,7 +80,7 @@ class AliceNexusGUI(ctk.CTk):
         self.main_container.grid_rowconfigure(1, weight=1)
 
         # Header Title
-        self.header_lbl = ctk.CTkLabel(self.main_container, text="Lead Enrichment Engine v6.0 — WORLD EDITION", font=ctk.CTkFont(size=24, weight="bold"), text_color=self.accent_color)
+        self.header_lbl = ctk.CTkLabel(self.main_container, text=f"Lead Enrichment {VERSION}", font=ctk.CTkFont(size=24, weight="bold"), text_color=self.accent_color)
         self.header_lbl.grid(row=0, column=0, sticky="w", pady=(0, 20))
 
         # Engine Control Panel
@@ -168,6 +169,12 @@ class AliceNexusGUI(ctk.CTk):
         self.chk_global = ctk.CTkCheckBox(opts_row, text="🌍 Global IDs (VAT/CNPJ/RFC/RUT)", font=ctk.CTkFont(size=11)); self.chk_global.select()
         self.chk_global.pack(side="left", padx=10)
 
+        self.chk_verify = ctk.CTkCheckBox(self.engine_frame,
+            text="Verify mailboxes: DNS + SMTP (no message sent; blocked checks stay unknown)",
+            font=ctk.CTkFont(size=12))
+        self.chk_verify.select()
+        self.chk_verify.pack(anchor="w", padx=50, pady=8)
+
         # ─── FOOTER CONTROLS ───
         self.footer = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.footer.grid(row=2, column=0, sticky="ew", pady=(20, 0))
@@ -193,6 +200,9 @@ class AliceNexusGUI(ctk.CTk):
     # --- UI Logic ---
 
     def log_system(self, msg):
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, lambda: self.log_system(msg))
+            return
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_box.insert("end", f"[{ts}] {msg}\n")
         self.log_box.see("end")
@@ -217,7 +227,7 @@ class AliceNexusGUI(ctk.CTk):
             self.output_dir = os.path.dirname(p)
             
         try:
-            self.df = pd.read_csv(p) if p.endswith('.csv') else pd.read_excel(p)
+            self.df = pd.read_csv(p, dtype=str, keep_default_na=False) if p.lower().endswith('.csv') else pd.read_excel(p, dtype=str, keep_default_na=False)
             cols = list(self.df.columns)
             
             # Reset UI
@@ -256,16 +266,31 @@ class AliceNexusGUI(ctk.CTk):
     def toggle_engine(self):
         if self.running:
             self.running = False
-            self.btn_run.configure(text="🚀 INITIALIZE EXTRACTION ENGINE", fg_color=self.success_color)
+            self.btn_run.configure(text="Stopping and exporting...", state="disabled")
             return
             
         if not self.mapping_confirmed:
             messagebox.showwarning("Sync Required", "Sync Mapping before initialization.")
             return
             
+        try:
+            limit = int(self.var_limit.get() or 100)
+            if limit < 1:
+                raise ValueError("Record limit must be positive")
+        except ValueError:
+            messagebox.showwarning("Invalid limit", "Enter a positive record limit.")
+            return
+        # Read all Tk state on the UI thread before starting the worker.
+        options = {
+            "raw_data": self.df.head(limit).to_dict('records'),
+            "export_cols": [c for c, v in self.col_vars.items() if v.get()],
+            "name_col": self.var_name.get(), "city_col": self.var_city.get(),
+            "format": self.var_format.get(), "output_dir": self.output_dir,
+            "verify_mailboxes": bool(self.chk_verify.get()),
+        }
         self.running = True
         self.btn_run.configure(text="🛑 TERMINATE ENGINE PROCESS", fg_color="#EF4444")
-        threading.Thread(target=self._engine_thread, daemon=True).start()
+        threading.Thread(target=self._engine_thread, args=(options,), daemon=True).start()
 
     def _update_progress(self, current, total, company):
         perc = current / total
@@ -273,15 +298,13 @@ class AliceNexusGUI(ctk.CTk):
         self.lbl_stats.configure(text=f"Enriched: {current} | Total: {total}")
         self.log_system(f"Record {current}/{total}: {company.company_name} -> {company.status}")
 
-    def _engine_thread(self):
+    def _engine_thread(self, options):
         try:
-            limit = int(self.var_limit.get() or 100)
-            export_cols = [c for c, v in self.col_vars.items() if v.get()]
-            raw_data = self.df.head(limit).to_dict('records')
-            
-            name_col = self.var_name.get()
-            city_col = self.var_city.get()
-            
+            export_cols = options["export_cols"]
+            raw_data = options["raw_data"]
+            name_col = options["name_col"]
+            city_col = options["city_col"]
+
             companies = []
             original_data_storage = {} 
             
@@ -291,10 +314,16 @@ class AliceNexusGUI(ctk.CTk):
                 
                 comp = EnrichedCompany(
                     company_name=name,
-                    city=str(row.get(city_col, "")) if city_col not in ["-- select --", "-- none --"] else ""
+                    city=str(row.get(city_col, "")) if city_col not in ["-- select --", "-- none --"] else "",
+                    website=str(row.get("website", "")),
+                    email=str(row.get("email", "")),
+                    country=str(row.get("country", "")),
+                    state=str(row.get("state", ""))
                 )
                 # Country detection from company name / context
-                if any(kw in name.lower() for kw in ['gmbh', 'g.m.b.h']):
+                if comp.country:
+                    pass
+                elif any(kw in name.lower() for kw in ['gmbh', 'g.m.b.h']):
                     comp.country = 'DE'
                 elif any(kw in name.lower() for kw in ['sas', 'sarl']):
                     if any(kw in name.lower() for kw in ['colombia', 'mx', 'mexico', 'brasil', 'chile', 'peru', 'argentina']):
@@ -316,9 +345,17 @@ class AliceNexusGUI(ctk.CTk):
             def cb(i, t, c): self.after(0, lambda: self._update_progress(i, t, c))
             results = run_enrichment(companies, workers=20, progress_callback=cb, stop_flag=lambda: not self.running)
             
-            if self.running:
+            if results:
+                checks = [None] * len(results)
+                if options["verify_mailboxes"]:
+                    from mailbox_verifier import run_verification
+                    self.log_system("Checking DNS/MX and SMTP recipients; no messages will be sent.")
+                    checks = run_verification([res.email for res in results],
+                        stop_flag=lambda: not self.running,
+                        progress_callback=lambda n, t, result: self.log_system(
+                            f"Mailbox check {n}/{t}: {result.status}"))
                 final_rows = []
-                for res in results:
+                for res, check in zip(results, checks):
                     row = original_data_storage.get(id(res), {}).copy()
                     row['ENRICHED_EMAIL'] = res.email
                     row['ENRICHED_WEBSITE'] = res.website
@@ -351,18 +388,31 @@ class AliceNexusGUI(ctk.CTk):
                     row['ENRICHED_REVENUE'] = res.revenue
                     row['ENRICHED_FOUNDED'] = res.founded
                     row['CONFIDENCE'] = f"{res.confidence}%"
+                    row['SCORE_TYPE'] = 'data_completeness_not_deliverability'
                     row['STATUS'] = res.status
                     row['SOURCES'] = res.sources_used
+                    row['EMAIL_STATUS'] = res.email_status
+                    row['EVIDENCE'] = res.evidence
+                    row['CHECKED_AT'] = res.checked_at
+                    row['ERROR'] = res.error
+                    row['MAILBOX_STATUS'] = check.status if check else 'not_checked'
+                    row['MAILBOX_REASON'] = check.reason if check else 'disabled'
+                    row['MAILBOX_MX'] = check.mx_host if check else ''
+                    row['MAILBOX_SMTP_CODE'] = check.smtp_code if check else ''
+                    row['MAILBOX_CATCH_ALL'] = (str(check.catch_all).lower()
+                        if check and check.catch_all is not None else '')
+                    row['MAILBOX_CHECKED_AT'] = check.checked_at if check else ''
                     final_rows.append(row)
                 
-                out_df = pd.DataFrame(final_rows)
+                out_df = pd.DataFrame(final_rows).map(spreadsheet_safe)
+                out_df.columns = spreadsheet_headers(out_df.columns)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 # Add timestamp to filename to avoid Permission Denied if file is open
-                fname = f"NEXUS_ENRICHED_{ts}.{self.var_format.get().lower()}"
-                out_path = os.path.join(self.output_dir, fname)
+                fname = f"NEXUS_ENRICHED_{ts}.{options['format'].lower()}"
+                out_path = os.path.join(options["output_dir"], fname)
                 
                 try:
-                    if self.var_format.get() == "XLSX":
+                    if options["format"] == "XLSX":
                         out_df.to_excel(out_path, index=False)
                     else:
                         out_df.to_csv(out_path, index=False)
@@ -374,13 +424,13 @@ class AliceNexusGUI(ctk.CTk):
                     self.log_system(f"PERMISSION ERROR: Folder {self.output_dir} is locked.")
                     self.after(0, lambda: messagebox.showerror("Permission Error", f"Cannot write to {self.output_dir}.\nPlease close the file if open or select another folder."))
 
-                self.after(0, lambda: self.btn_run.configure(text="🚀 INITIALIZE EXTRACTION ENGINE", fg_color=self.success_color))
-                self.running = False
                 
         except Exception as e:
             self.log_system(f"CRITICAL ENGINE FAILURE: {e}")
+
+        finally:
             self.running = False
-            self.after(0, lambda: self.btn_run.configure(text="🚀 INITIALIZE EXTRACTION ENGINE", fg_color=self.success_color))
+            self.after(0, lambda: self.btn_run.configure(text="🚀 INITIALIZE EXTRACTION ENGINE", fg_color=self.success_color, state="normal"))
 
 if __name__ == "__main__":
     app = AliceNexusGUI()

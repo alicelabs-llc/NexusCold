@@ -7,3 +7,9 @@ dist/
 *.spec
 enrich_cache.json
 __pycache__/
+
+warmer_state.json
+warmer_templates.json
+.env
+.venv/
+.pytest_cache/
