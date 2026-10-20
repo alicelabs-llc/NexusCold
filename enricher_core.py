@@ -1057,17 +1057,31 @@ def ai_agent_heuristic(company: EnrichedCompany):
 
 async def enrich_company(
     session: aiohttp.ClientSession,
-    company: EnrichedCompany
+    company: EnrichedCompany,
+    *, discovery_sources=None, waterfall=False, registry_sources=None, use_cache=True
 ) -> EnrichedCompany:
+    allowed_discovery = {'ddg', 'bing', 'google', 'clearbit'}
+    allowed_registry = {'samgov', 'opencorp', 'uk', 'brazil', 'vat'}
+    if discovery_sources is not None and not set(discovery_sources) <= allowed_discovery:
+        raise ValueError('Unknown discovery source')
+    if registry_sources is not None and not set(registry_sources) <= allowed_registry:
+        raise ValueError('Unknown registry source')
+    # Legacy cache has no source configuration in its key; never reuse it across custom plans.
+    use_cache = use_cache and discovery_sources is None and registry_sources is None and not waterfall
+    registries = allowed_registry if registry_sources is None else set(registry_sources)
     name = company.company_name
     city = company.city
     state = company.state
     country = company.country
     sources_used = []
+    provenance, conflicts = {}, []
+    for key in ('website', 'email', 'phone', 'address', 'country'):
+        if getattr(company, key, ''):
+            provenance[key] = {'source': 'input'}
 
     # ── Check cache ──
     cache_key = get_cache_key(company)
-    cache = load_cache()
+    cache = load_cache() if use_cache else {}
     cached = cache.get(cache_key, {})
     if time.time() - cached.get("ts", 0) < CACHE_TTL and cached.get("confidence", 0) >= 30:
         defaults = EnrichedCompany()
@@ -1081,18 +1095,31 @@ async def enrich_company(
         # ── Step 1: Find domain/website (parallel: DDG, Bing, Google, Clearbit) ──
         if not company.website:
             await asyncio.sleep(random.uniform(0.1, 1.5))  # jitter
-            tasks = [
-                source_clearbit(session, name),
-                source_ddg(session, name, city, state),
-                source_bing(session, name, city, state),
-                source_google(session, name, city, state),
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            factories = {
+                'clearbit': lambda: source_clearbit(session, name),
+                'ddg': lambda: source_ddg(session, name, city, state),
+                'bing': lambda: source_bing(session, name, city, state),
+                'google': lambda: source_google(session, name, city, state),
+            }
+            selected = ('clearbit', 'ddg', 'bing', 'google') if discovery_sources is None else discovery_sources
+            if waterfall:
+                results = []
+                for source in selected:
+                    try:
+                        result = await factories[source]()
+                    except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+                        continue
+                    results.append(result)
+                    if isinstance(result, dict) and result.get('website') and is_valid_website(result['website']):
+                        break
+            else:
+                results = await asyncio.gather(*(factories[source]() for source in selected), return_exceptions=True)
             for r in results:
                 if isinstance(r, dict) and r.get('website') and is_valid_website(r['website']):
                     company.website = r['website']
                     company.domain = r.get('domain', extract_domain(r['website'])) or company.domain
                     sources_used.append(r.get('source', '?'))
+                    provenance['website'] = {'source': r.get('source', '?')}
                     break
 
         # Apply inference only AFTER observed fields have been merged.
@@ -1100,21 +1127,21 @@ async def enrich_company(
         # ── Step 3: Website scraping + corporate data (parallel) ──
         tasks2 = [source_website(session, company.website)]
 
-        if not company.duns and not company.ein:
+        if 'samgov' in registries and not company.duns and not company.ein:
             tasks2.append(source_samgov(session, name))
 
-        if not company.address and not company.company_number:
+        if 'opencorp' in registries and not company.address and not company.company_number:
             tasks2.append(source_opencorp(session, name, state, country))
 
-        if not company.company_number and not company.address:
+        if 'uk' in registries and not company.company_number and not company.address:
             tasks2.append(source_uk_companies(session, name))
 
-        if not company.cnpj:
+        if 'brazil' in registries and not company.cnpj:
             # Try to find CNPJ from name in Brazil
             if country.upper() == 'BR' or 'brasil' in name.lower() or 'brazil' in name.lower() or 'ltda' in name.lower():
                 tasks2.append(source_brazil_cnpj(session, ''))
 
-        if not company.vat:
+        if 'vat' in registries and not company.vat:
             tasks2.append(source_eu_vat(session, company.vat))
 
         results2 = await asyncio.gather(*tasks2, return_exceptions=True)
@@ -1138,10 +1165,14 @@ async def enrich_company(
                 'employees', 'revenue', 'business_type', 'company_name'
             ]:
                 val = r.get(field_name, '')
+                existing = getattr(company, field_name, '')
+                if val and existing and existing != getattr(EnrichedCompany(), field_name) and val != existing:
+                    conflicts.append({'field': field_name, 'kept': existing, 'observed': val, 'source': src})
                 if val and (not getattr(company, field_name, '') or
                             getattr(company, field_name) == getattr(EnrichedCompany(), field_name)):
                     try:
                         setattr(company, field_name, val)
+                        provenance[field_name] = {'source': src}
                     except:
                         pass
 
@@ -1152,6 +1183,8 @@ async def enrich_company(
         for result in results2:
             if isinstance(result, dict):
                 evidence.update(result.get("evidence", {}))
+        evidence['_fields'] = provenance
+        evidence['_conflicts'] = conflicts
         company.evidence = json.dumps(evidence, sort_keys=True)
 
         # ── Step 4: Calculate completeness (not email verification) ──
@@ -1188,7 +1221,7 @@ async def enrich_company(
             company.status = "failed"
 
         # ── Save to cache ──
-        if company.confidence >= 10:
+        if use_cache and company.confidence >= 10:
             save_cache({cache_key: {**asdict(company), "ts": time.time()}})
 
     return company
@@ -1202,7 +1235,8 @@ async def enrich_batch(
     companies: List[EnrichedCompany],
     workers: int = 20,
     progress_callback: Optional[Callable] = None,
-    stop_flag: Optional[Callable] = None
+    stop_flag: Optional[Callable] = None,
+    *, discovery_sources=None, waterfall=False, registry_sources=None, use_cache=True
 ) -> List[EnrichedCompany]:
     """
     Procesa la lista de empresas con `workers` conexiones simultáneas.
@@ -1230,7 +1264,11 @@ async def enrich_batch(
                 company.status = "cancelled"
                 return company
             try:
-                enriched = await enrich_company(session, company)
+                if discovery_sources is None and not waterfall and registry_sources is None and use_cache:
+                    enriched = await enrich_company(session, company)
+                else:
+                    enriched = await enrich_company(session, company, discovery_sources=discovery_sources,
+                        waterfall=waterfall, registry_sources=registry_sources, use_cache=use_cache)
             except Exception as e:
                 company.status = 'failed'
                 company.error = type(e).__name__
@@ -1256,7 +1294,9 @@ def run_enrichment(
     companies: List[EnrichedCompany],
     workers: int = 20,
     progress_callback: Optional[Callable] = None,
-    stop_flag: Optional[Callable] = None
+    stop_flag: Optional[Callable] = None,
+    *, discovery_sources=None, waterfall=False, registry_sources=None, use_cache=True
 ) -> List[EnrichedCompany]:
     """Entry point síncrono para GUI y scripts. Llama al motor asíncrono."""
-    return asyncio.run(enrich_batch(companies, workers, progress_callback, stop_flag))
+    return asyncio.run(enrich_batch(companies, workers, progress_callback, stop_flag,
+        discovery_sources=discovery_sources, waterfall=waterfall, registry_sources=registry_sources, use_cache=use_cache))

@@ -13,3 +13,6 @@ warmer_templates.json
 .env
 .venv/
 .pytest_cache/
+*.german
+*.german.key
+deploy/.env

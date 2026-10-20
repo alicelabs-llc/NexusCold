@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+.pytest_cache
+.nexus_cache
+*.german
+*.key
+*.csv
+*.xlsx
+*.json
+.env
+deploy/.env

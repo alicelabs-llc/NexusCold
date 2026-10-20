@@ -13,7 +13,7 @@ from data_quality import spreadsheet_safe, spreadsheet_headers
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "6.2 — MAILBOX CHECKS"
+VERSION = "6.3 — GERMÁN"
 
 class AliceNexusGUI(ctk.CTk):
     def __init__(self):
@@ -67,7 +67,7 @@ class AliceNexusGUI(ctk.CTk):
         self.btn_niche = ctk.CTkButton(self.sidebar, text="🏷️ Niche Searcher", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
         self.btn_niche.grid(row=3, column=0, padx=20, pady=8, sticky="ew")
         
-        self.btn_brain = ctk.CTkButton(self.sidebar, text="🧠 AI Brain Hub", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
+        self.btn_brain = ctk.CTkButton(self.sidebar, text="🧠 Germán · Operador local", command=self.open_german, fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
         self.btn_brain.grid(row=4, column=0, padx=20, pady=8, sticky="ew")
 
         self.btn_warmer = ctk.CTkButton(self.sidebar, text="🔥 Email Warmer", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
@@ -198,6 +198,15 @@ class AliceNexusGUI(ctk.CTk):
         self.log_box.grid(row=3, column=0, sticky="ew", pady=(15, 0))
 
     # --- UI Logic ---
+
+    def open_german(self):
+        from german_panel import GermanPanel
+        panel = getattr(self, 'german_panel', None)
+        if panel is None or not panel.winfo_exists():
+            self.german_panel = GermanPanel(self)
+        else:
+            panel.lift()
+            panel.focus_force()
 
     def log_system(self, msg):
         if threading.current_thread() is not threading.main_thread():
