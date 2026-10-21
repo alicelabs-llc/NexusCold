@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "name": "TechDigital Prospect",
+  "version": "6.4",
+  "publisher": {
+    "name": "AliceLabs LLC",
+    "contact": "legal@alicelabs.site"
+  },
+  "website": "https://prospect.techdigital.site/",
+  "license": "AL-1.0; desktop commercial use requires written authorization",
+  "capabilities": [
+    {
+      "id": "browser_csv_review",
+      "runtime": "browser",
+      "network": false,
+      "file_upload": false,
+      "limits": {
+        "bytes": 2097152,
+        "rows": 10000
+      }
+    },
+    {
+      "id": "review",
+      "runtime": "local_python_cli",
+      "command": [
+        "python",
+        "prospect_cli.py",
+        "review",
+        "INPUT.csv"
+      ],
+      "network": false
+    },
+    {
+      "id": "mailbox_check",
+      "runtime": "local_python_cli",
+      "command": [
+        "python",
+        "prospect_cli.py",
+        "run",
+        "INPUT.csv",
+        "--output",
+        "OUTPUT.csv",
+        "--mode",
+        "smtp",
+        "--allow-network"
+      ],
+      "network": true,
+      "requires_explicit_authorization": true,
+      "sends_email_body": false
+    },
+    {
+      "id": "advisory_chat",
+      "runtime": "configured_ollama_or_self_hosted_gateway",
+      "remote_endpoint_not_deployed_by_this_site": true,
+      "gateway_path": "/api/chat",
+      "authentication": "Bearer token for self-hosted gateway",
+      "can_execute_tools": false
+    }
+  ],
+  "not_implemented": [
+    "remote_enrichment_api",
+    "campaign_api",
+    "multi_tenant_gateway",
+    "native_mobile_app"
+  ],
+  "data_policy": "https://prospect.techdigital.site/legal/privacy/",
+  "documentation": "https://prospect.techdigital.site/docs/"
+}
