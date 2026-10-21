@@ -1,4 +1,16 @@
-# NexusCold 6.2 — Mailbox Checks
+# TechDigital Prospect 6.4 · by AliceLabs LLC
+
+Antes NexusCold. Nueva identidad pública: **TechDigital Prospect**, un producto de **AliceLabs LLC**. Se conservan nombres internos y comandos anteriores por compatibilidad. Firma editorial centralizada en `product_identity.py`.
+
+Incluye panel **Germán · Operador local**, revisión y mapeo EN/ES, trabajos con checkpoint cifrado y reanudación, cascada web configurable, procedencia/conflictos por campo, publicación SPF/DMARC y chat opcional con **Qwen3.5 + Ollama** sin claves API en local. Incluye gateway y Docker Compose para un servidor propio con dominio y HTTPS. [Guía de Germán, modelos, costos y despliegue](docs/GERMAN.md).
+
+```bash
+python prospect_cli.py review empresas.csv
+python prospect_cli.py run empresas.csv --output revisadas.csv
+python prospect_cli.py ask revisadas.csv "¿Qué puedo mejorar?"
+```
+
+El chat requiere Ollama y un modelo descargado; las demás funciones del operador no dependen de la IA. No se ha validado inferencia real ni desplegado un servidor en esta entrega. Los trabajos de Germán usan CSV; el motor original que se documenta a continuación conserva CSV/XLSX.
 
 Enriquecimiento B2B local de AliceLabs LLC. Revisa archivos CSV sin subirlos a una plataforma y activa búsquedas web cuando las necesites. Sin cuenta ni clave API para el flujo básico. Python 3.10 o superior.
 
@@ -9,7 +21,7 @@ python -m pip install -r requirements.txt
 python ALICELABS_EXTRACTOR_GUI.py
 ```
 
-Windows: después de instalar, abre `ALICELABS_NEXUS_6.2.bat`. Para generar un ejecutable, ejecuta `build_nexus.bat` desde Windows. El builder ya no depende de una ruta privada de otro equipo ni de un archivo de caché inexistente. El ejecutable debe compilarse y probarse en Windows; esta versión no adjunta un binario validado.
+Windows: después de instalar, abre `TECHDIGITAL_PROSPECT.bat`. Para generar un ejecutable, ejecuta `build_nexus.bat` desde Windows. El builder ya no depende de una ruta privada de otro equipo ni de un archivo de caché inexistente. El ejecutable debe compilarse y probarse en Windows; esta versión no adjunta un binario validado.
 
 En la interfaz, carga CSV/XLSX, mapea nombre y ciudad, confirma y ejecuta. Las columnas opcionales `website`, `email`, `country` y `state` se aprovechan cuando están presentes. Detener conserva resultados parciales y marca filas que no empezaron como `cancelled`; las consultas en curso finalizan con sus timeouts.
 
@@ -99,3 +111,7 @@ Suite automática offline y CI configurado para Python 3.10, 3.12 y 3.13. Los sc
 Comparación actual, límites y prioridades: [docs/COMPETITION.md](docs/COMPETITION.md).
 
 AliceLabs LLC — Edison Flores. Licencia: [AL-1.0](LICENSE-AL-1.0).
+
+## Web, móviles y agentes
+
+Landing ES/EN y revisor CSV local adaptable a móviles en `website/`. Destino solicitado: `https://techdigital.site/prospect/`; no se reemplaza el marketplace raíz. Incluye políticas, licencia, contactos de AliceLabs LLC, `llms.txt` y manifiesto de capacidades reales. [Publicación en Hostinger](website/DEPLOY-HOSTINGER.md). [Estándar corporativo para proyectos](docs/ALICELABS-PROJECT-STANDARD.md). La aplicación Python sigue siendo de escritorio; no se incluye app móvil nativa.

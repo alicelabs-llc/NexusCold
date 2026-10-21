@@ -9,16 +9,17 @@ from datetime import datetime
 # Import core engine
 from enricher_core import EnrichedCompany, run_enrichment
 from data_quality import spreadsheet_safe, spreadsheet_headers
+from product_identity import PRODUCT_NAME, PRODUCT_VERSION, COMPANY_NAME, PRODUCT_SIGNATURE
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "6.2 — MAILBOX CHECKS"
+VERSION = PRODUCT_VERSION + " — GERMÁN"
 
 class AliceNexusGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title(f"AliceLabs B2B Nexus — {VERSION}")
+        self.title(f"{PRODUCT_SIGNATURE} — {VERSION}")
         self.geometry("1400x900")
         
         # Colors (Blue Skin)
@@ -56,7 +57,7 @@ class AliceNexusGUI(ctk.CTk):
         self.logo_label = ctk.CTkLabel(self.sidebar, text="AliceLabs", font=ctk.CTkFont(size=28, weight="bold"), text_color=self.accent_color)
         self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 5))
         
-        self.sub_label = ctk.CTkLabel(self.sidebar, text=f"B2B Nexus {VERSION}", font=ctk.CTkFont(size=12), text_color="#94A3B8")
+        self.sub_label = ctk.CTkLabel(self.sidebar, text=f"{PRODUCT_NAME}\nby {COMPANY_NAME} · {VERSION}", font=ctk.CTkFont(size=12), text_color="#94A3B8")
         self.sub_label.grid(row=1, column=0, padx=20, pady=(0, 40))
 
         # Sidebar Buttons
@@ -67,7 +68,7 @@ class AliceNexusGUI(ctk.CTk):
         self.btn_niche = ctk.CTkButton(self.sidebar, text="🏷️ Niche Searcher", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
         self.btn_niche.grid(row=3, column=0, padx=20, pady=8, sticky="ew")
         
-        self.btn_brain = ctk.CTkButton(self.sidebar, text="🧠 AI Brain Hub", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
+        self.btn_brain = ctk.CTkButton(self.sidebar, text="🧠 Germán · Operador local", command=self.open_german, fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
         self.btn_brain.grid(row=4, column=0, padx=20, pady=8, sticky="ew")
 
         self.btn_warmer = ctk.CTkButton(self.sidebar, text="🔥 Email Warmer", fg_color="transparent", border_width=1, border_color=self.accent_color, **btn_opts)
@@ -198,6 +199,15 @@ class AliceNexusGUI(ctk.CTk):
         self.log_box.grid(row=3, column=0, sticky="ew", pady=(15, 0))
 
     # --- UI Logic ---
+
+    def open_german(self):
+        from german_panel import GermanPanel
+        panel = getattr(self, 'german_panel', None)
+        if panel is None or not panel.winfo_exists():
+            self.german_panel = GermanPanel(self)
+        else:
+            panel.lift()
+            panel.focus_force()
 
     def log_system(self, msg):
         if threading.current_thread() is not threading.main_thread():
@@ -408,7 +418,7 @@ class AliceNexusGUI(ctk.CTk):
                 out_df.columns = spreadsheet_headers(out_df.columns)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 # Add timestamp to filename to avoid Permission Denied if file is open
-                fname = f"NEXUS_ENRICHED_{ts}.{options['format'].lower()}"
+                fname = f"PROSPECT_ENRICHED_{ts}.{options['format'].lower()}"
                 out_path = os.path.join(options["output_dir"], fname)
                 
                 try:
@@ -418,7 +428,7 @@ class AliceNexusGUI(ctk.CTk):
                         out_df.to_csv(out_path, index=False)
                     
                     self.log_system(f"SUCCESS: Exported to {out_path}")
-                    self.after(0, lambda: messagebox.showinfo("Nexus PRO", f"Extraction completed!\n\nLocation: {out_path}"))
+                    self.after(0, lambda: messagebox.showinfo(PRODUCT_NAME, f"Extraction completed!\n\nLocation: {out_path}"))
                 except PermissionError:
                     # If even with unique timestamp it fails (rare), or folder is locked
                     self.log_system(f"PERMISSION ERROR: Folder {self.output_dir} is locked.")

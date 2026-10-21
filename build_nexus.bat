@@ -1,12 +1,12 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title AliceLabs Nexus 6.2 Builder
+title TechDigital Prospect by AliceLabs LLC Builder
 python -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 goto :failed
-python -m PyInstaller --noconfirm --onefile --windowed --name "AliceLabs_Nexus_v6.2" --collect-all customtkinter --hidden-import pandas --hidden-import aiohttp "ALICELABS_EXTRACTOR_GUI.py"
+python -m PyInstaller --noconfirm --onefile --windowed --name "TechDigital_Prospect_v6.4" --collect-all customtkinter --hidden-import pandas --hidden-import aiohttp "ALICELABS_EXTRACTOR_GUI.py"
 if errorlevel 1 goto :failed
-echo Build complete: dist\AliceLabs_Nexus_v6.2.exe
+echo Build complete: dist\TechDigital_Prospect_v6.4.exe
 pause
 exit /b 0
 :failed
