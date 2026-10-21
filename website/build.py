@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an independent /prospect/ website for Hostinger, without touching site root."""
+"""Build a portable static website for Hostinger, Cloudflare or GitHub Pages."""
 import argparse
 import hashlib
 import html
@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import zipfile
+from urllib.parse import urlsplit
 from content import ES, EN, STEPS, FEATURES, COMPARISONS, PLANS, FAQ
 from legal_content import PAGES
 
@@ -19,6 +20,15 @@ PUBLIC=SOURCE/'dist'/'prospect'
 ORIGIN='https://techdigital.site/prospect/'
 SLUGS=['about','privacy','terms','acceptable-use','refunds','cookies','security','license']
 escape=html.escape
+
+def normalize_origin(value):
+ parts=urlsplit(value)
+ if (parts.scheme!='https' or not parts.hostname or parts.username or parts.password
+     or parts.query or parts.fragment or any(ord(c)<=32 for c in value)
+     or any(c in value for c in '<>"\'')
+     or any(p in ('.','..') for p in parts.path.split('/'))):
+  raise ValueError('Site origin must be an absolute HTTPS URL without credentials, query or fragment.')
+ return value.rstrip('/')+'/'
 
 def write(path,text):
  path.parent.mkdir(parents=True,exist_ok=True)
@@ -174,6 +184,15 @@ DirectoryIndex index.html
 ''')
  urls=[ORIGIN+str(p.relative_to(PUBLIC)).removesuffix('index.html') for p in sorted(PUBLIC.rglob('index.html'))]
  write(PUBLIC/'sitemap.xml','<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join(f'<url><loc>{escape(url)}</loc></url>' for url in urls)+'</urlset>')
+ write(PUBLIC/'robots.txt',f'User-agent: *\nAllow: /\nSitemap: {ORIGIN}sitemap.xml\n')
+ write(PUBLIC/'_headers', '''/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; worker-src 'none'
+''')
+ write(PUBLIC/'.nojekyll','')
  if hostinger_zip:
   with zipfile.ZipFile(hostinger_zip,'w',compression=zipfile.ZIP_DEFLATED) as archive:
    for path in sorted(PUBLIC.rglob('*')):
@@ -181,4 +200,10 @@ DirectoryIndex index.html
  print(json.dumps({'site_directory':str(PUBLIC),'pages':len(urls),'source_sha256':checksum,'hostinger_zip':str(hostinger_zip) if hostinger_zip else None}))
 
 if __name__=='__main__':
- parser=argparse.ArgumentParser();parser.add_argument('--zip',type=Path);args=parser.parse_args();build(args.zip)
+ parser=argparse.ArgumentParser()
+ parser.add_argument('--zip',type=Path)
+ parser.add_argument('--origin',default=os.environ.get('SITE_ORIGIN',ORIGIN),help='Public HTTPS base URL, including any project path')
+ args=parser.parse_args()
+ try:ORIGIN=normalize_origin(args.origin)
+ except ValueError as error:parser.error(str(error))
+ build(args.zip)
