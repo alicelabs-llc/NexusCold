@@ -7,10 +7,12 @@ import os
 from pathlib import Path
 from german_agent import inspect_rows, ModelConfig, ask_german, DEFAULT_MODEL
 from german_jobs import read_csv, run_job, MODES, SOURCES
+from product_identity import PRODUCT_SIGNATURE, PRODUCT_VERSION
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Germán — operador local de NexusCold')
+    parser = argparse.ArgumentParser(description=PRODUCT_SIGNATURE + ' ' + PRODUCT_VERSION + ' — Germán')
+    parser.add_argument('--version', action='version', version=PRODUCT_SIGNATURE + ' ' + PRODUCT_VERSION)
     sub = parser.add_subparsers(dest='command', required=True)
     review = sub.add_parser('review', help='Analizar CSV sin red ni modelo')
     review.add_argument('input', type=Path)

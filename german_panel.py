@@ -11,12 +11,13 @@ import customtkinter as ctk
 from german_agent import DEFAULT_MODEL, inspect_rows, ask_german, ModelConfig
 from german_jobs import MODES, SOURCES, read_csv, run_job
 from domain_auth import check_domain
+from product_identity import PRODUCT_SIGNATURE, PRODUCT_VERSION
 
 
 class GermanPanel(ctk.CTkToplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.title('Germán · NexusCold 6.3')
+        self.title(f'Germán · {PRODUCT_SIGNATURE} {PRODUCT_VERSION}')
         self.geometry('1000x840')
         self.minsize(820, 650)
         self.rows, self.analysis = [], {}
