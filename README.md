@@ -114,4 +114,8 @@ AliceLabs LLC — Edison Flores. Licencia: [AL-1.0](LICENSE-AL-1.0).
 
 ## Web, móviles y agentes
 
+La web admite alojamiento estático en Cloudflare y GitHub Pages, conservando el
+dominio en Hostinger. El build acepta `--origin` para ajustar canonical, sitemap
+y manifiesto al dominio publicado. [Guía de Cloudflare y conexión de dominio](website/DEPLOY-CLOUDFLARE.md).
+
 Landing ES/EN y revisor CSV local adaptable a móviles en `website/`. Destino solicitado: `https://techdigital.site/prospect/`; no se reemplaza el marketplace raíz. Incluye políticas, licencia, contactos de AliceLabs LLC, `llms.txt` y manifiesto de capacidades reales. [Publicación en Hostinger](website/DEPLOY-HOSTINGER.md). [Estándar corporativo para proyectos](docs/ALICELABS-PROJECT-STANDARD.md). La aplicación Python sigue siendo de escritorio; no se incluye app móvil nativa.

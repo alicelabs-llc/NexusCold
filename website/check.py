@@ -32,8 +32,15 @@ for path,page in pages.items():
   if not dest.is_file():errors.append(f'{path.relative_to(ROOT)}: missing {link}')
   if url.fragment and dest in pages and url.fragment not in pages[dest].ids:errors.append(f'{path.relative_to(ROOT)}: missing anchor {link}')
 manifest=json.loads((ROOT/'agent.json').read_text())
+assert len(pages)==22, 'Expected the complete 22-page website'
 assert manifest['publisher']['name']=='AliceLabs LLC'
 assert 'remote_enrichment_api' in manifest['not_implemented']
+assert manifest['website'].startswith('https://') and manifest['website'].endswith('/')
+for path in pages:
+ expected=manifest['website']+str(path.relative_to(ROOT)).removesuffix('index.html')
+ assert f'<link rel="canonical" href="{expected}">' in path.read_text(), f'{path}: wrong hosting URL'
+assert manifest['website']+'sitemap.xml' in (ROOT/'robots.txt').read_text()
+assert 'Content-Security-Policy:' in (ROOT/'_headers').read_text()
 with zipfile.ZipFile(ROOT/'downloads/TechDigital-Prospect-6.4-source.zip') as archive:
  names=archive.namelist()
  assert any(n.endswith('/product_identity.py') for n in names)
