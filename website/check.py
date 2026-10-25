@@ -33,7 +33,8 @@ for path,page in pages.items():
   if url.fragment and dest in pages and url.fragment not in pages[dest].ids:errors.append(f'{path.relative_to(ROOT)}: missing anchor {link}')
 manifest=json.loads((ROOT/'agent.json').read_text())
 assert manifest['publisher']['name']=='AliceLabs LLC'
-assert 'remote_enrichment_api' in manifest['not_implemented']
+assert any(c['id']=='public_enrichment' for c in manifest['capabilities'])
+assert 'managed_enrichment_backend' in manifest['not_implemented']
 with zipfile.ZipFile(ROOT/'downloads/TechDigital-Prospect-6.4-source.zip') as archive:
  names=archive.namelist()
  assert any(n.endswith('/product_identity.py') for n in names)
