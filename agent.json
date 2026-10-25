@@ -19,8 +19,8 @@
         "Google Public DNS"
       ],
       "requires_explicit_authorization": true,
-      "identity_matching": "user_confirmation",
-      "max_rows_per_run": 100
+      "identity_matching": "unique_exact_organization_otherwise_user_confirmation",
+      "max_rows_per_run": 10000
     },
     {
       "id": "website_contacts",
