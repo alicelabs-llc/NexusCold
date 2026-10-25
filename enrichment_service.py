@@ -46,11 +46,11 @@ class ContactParser(HTMLParser):
             self.fields.setdefault('description', a.get('content', '')[:1000])
 
 
-async def read_bounded(response):
+async def read_bounded(response, limit=MAX_BYTES):
     body = bytearray()
     async for chunk in response.content.iter_chunked(8192):
         body.extend(chunk)
-        if len(body) > MAX_BYTES:
+        if len(body) > limit:
             raise ValueError('response_limit')
     return body.decode(response.charset or 'utf-8', errors='replace')
 
@@ -127,6 +127,9 @@ def create_app(*, token=None, allowed_origin=None, crawler=crawl_site):
         raise ValueError('One HTTPS allowed origin is required')
     arrivals = deque()
     active = 0
+    sec_cache = []
+    sec_cache_at = 0
+    sec_lock = asyncio.Lock()
 
     @web.middleware
     async def cors(request, handler):
@@ -159,7 +162,7 @@ def create_app(*, token=None, allowed_origin=None, crawler=crawl_site):
 
     async def health(request):
         return web.json_response({'status': 'ready', 'capabilities': ['published_website_contacts'],
-                                  'pages_per_request': max(1,min(10,int(os.environ.get('PROSPECT_CRAWL_PAGES','5')))), 'web_search': 'brave' if os.environ.get('BRAVE_SEARCH_API_KEY') else 'not_configured', 'authentication': 'bearer_required'})
+                                  'pages_per_request': max(1,min(10,int(os.environ.get('PROSPECT_CRAWL_PAGES','5')))), 'web_search': 'brave' if os.environ.get('BRAVE_SEARCH_API_KEY') else 'not_configured', 'registry_sources': ['npi', 'sec'], 'authentication': 'bearer_required'})
 
     async def enrich(request):
         nonlocal active
@@ -233,13 +236,97 @@ def create_app(*, token=None, allowed_origin=None, crawler=crawl_site):
         finally:
             active -= 1
 
+    async def registry(request):
+        nonlocal active, sec_cache, sec_cache_at
+        if not hmac.compare_digest(request.headers.get('Authorization', '').encode(), ('Bearer ' + token).encode()):
+            raise web.HTTPUnauthorized(text='authentication_required')
+        provider = request.match_info['provider']
+        if provider not in ('npi', 'sec'):
+            raise web.HTTPNotFound(text='registry_not_supported')
+        try:
+            data = await request.json()
+            if (not isinstance(data, dict) or set(data) != {'company', 'city'}
+                    or not all(isinstance(data[k], str) and len(data[k]) <= 150 for k in data)
+                    or len(data['company'].strip()) < 2):
+                raise ValueError()
+        except (ValueError, TypeError, UnicodeError):
+            raise web.HTTPBadRequest(text='bounded_company_city_required') from None
+        now = time.monotonic()
+        while arrivals and arrivals[0] < now - 60:
+            arrivals.popleft()
+        if active >= 2 or len(arrivals) >= 20:
+            raise web.HTTPTooManyRequests(headers={'Retry-After': '60'})
+        arrivals.append(now)
+        active += 1
+        try:
+            candidates = []
+            if provider == 'npi':
+                params = {'version':'2.1', 'organization_name':data['company'],
+                          'enumeration_type':'NPI-2', 'limit':'5'}
+                if data['city'].strip():
+                    params['city'] = data['city']
+                async with app[SESSION].get('https://npiregistry.cms.hhs.gov/api/', params=params,
+                                           allow_redirects=False) as response:
+                    if response.status != 200:
+                        raise web.HTTPBadGateway(text='NPI_http_' + str(response.status))
+                    payload = json.loads(await read_bounded(response))
+                if payload.get('Errors'):
+                    raise web.HTTPBadGateway(text='NPI_query_rejected')
+                for item in payload.get('results', [])[:5]:
+                    if item.get('enumeration_type') != 'NPI-2':
+                        continue
+                    number = str(item.get('number', ''))
+                    basic = item.get('basic', {})
+                    location = next((a for a in item.get('addresses', []) if a.get('address_purpose') == 'LOCATION'), {})
+                    if not re.fullmatch(r'\d{10}', number) or not basic.get('organization_name'):
+                        continue
+                    specialty = next((t.get('desc', '') for t in item.get('taxonomies', []) if t.get('primary')), '')
+                    candidates.append({'provider':'npi', 'id':number, 'label':basic['organization_name'],
+                        'description':location.get('city', ''), 'source':'https://npiregistry.cms.hhs.gov/api/?version=2.1&number='+number,
+                        'fields': {'legal_name':basic['organization_name'], 'phone':location.get('telephone_number', ''),
+                            'headquarters':', '.join(str(location[k]) for k in ['address_1','address_2','city','state','postal_code'] if location.get(k)),
+                            'country':location.get('country_code', ''), 'industry':specialty,
+                            'registry_status':basic.get('status', ''), 'identifiers':json.dumps({'npi':number})}})
+            else:
+                async with sec_lock:
+                    if not sec_cache or time.monotonic() - sec_cache_at > 86400:
+                        async with app[SESSION].get('https://www.sec.gov/files/company_tickers.json',
+                            headers={'User-Agent':'TechDigitalProspect support@alicelabs.site'}, allow_redirects=False) as response:
+                            if response.status != 200:
+                                raise web.HTTPBadGateway(text='SEC_http_' + str(response.status))
+                            payload = json.loads(await read_bounded(response, limit=2_000_000))
+                        if not isinstance(payload, dict):
+                            raise ValueError('SEC_schema')
+                        sec_cache = [r for r in payload.values() if isinstance(r, dict) and r.get('title') and r.get('cik_str')]
+                        sec_cache_at = time.monotonic()
+                words = re.findall(r'[a-z0-9]+', data['company'].lower())
+                for item in sec_cache:
+                    if not words or not all(w in item['title'].lower() for w in words):
+                        continue
+                    cik = str(item['cik_str']).zfill(10)
+                    if not re.fullmatch(r'\d{10}', cik):
+                        continue
+                    candidates.append({'provider':'sec', 'id':cik, 'label':item['title'],
+                        'description':str(item.get('ticker', '')), 'source':'https://data.sec.gov/submissions/CIK'+cik+'.json',
+                        'fields': {'legal_name':item['title'],
+                            'identifiers':json.dumps({'sec_cik':cik, 'ticker':str(item.get('ticker', ''))})}})
+                    if len(candidates) >= 5:
+                        break
+            return web.json_response({'provider':provider, 'candidates':candidates})
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
+            raise web.HTTPBadGateway(text='registry_unavailable') from None
+        finally:
+            active -= 1
+
     app.router.add_get('/health', health)
     app.router.add_post('/api/enrich', enrich)
     app.router.add_post('/api/discover', discover)
+    app.router.add_post('/api/registry/{provider}', registry)
     async def options(request):
         return web.Response(status=204)
     app.router.add_options('/api/enrich', options)
     app.router.add_options('/api/discover', options)
+    app.router.add_options('/api/registry/{provider}', options)
     return app
 
 
