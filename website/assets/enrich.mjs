@@ -6,7 +6,7 @@ export function domainOf(value){
 }
 export async function jsonGet(url,{fetcher=fetch,signal}={}){
  const response=await fetcher(url,{credentials:'omit',referrerPolicy:'no-referrer',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(12000)]):AbortSignal.timeout(12000),headers:{Accept:'application/json'}});
- if(!response.ok)throw Error('HTTP_'+response.status);
+ if(!response.ok){const error=Error('HTTP_'+response.status);error.retryAfter=response.headers?.get?.('Retry-After');throw error;}
  const text=await response.text();if(text.length>1500000)throw Error('RESPONSE_LIMIT');return JSON.parse(text);
 }
 const api=(params)=>WD+'?'+new URLSearchParams({format:'json',origin:'*',maxlag:'5',...params});
@@ -55,7 +55,7 @@ export function mergeObservations(original,observations){
  return {fields,conflicts};
 }
 export function exportEnrichment(parsed,results){
- const keys=['status','legal_name','lei','registry_status','website','email','phone','description','industry','country','headquarters','founded','employees','linkedin','domain','mx','spf','dmarc','source','checked_at','conflicts','errors'];
+ const keys=['status','legal_name','lei','registry_status','website','email','phone','description','industry','country','headquarters','founded','employees','linkedin','domain','mx','spf','dmarc','source','source_status','identifiers','checked_at','conflicts','errors'];
  const headers=[...parsed.headers];const added=keys.map(k=>{let h='ENRICH_'+k.toUpperCase();while(headers.includes(h))h+='_2';headers.push(h);return h;});
  const safe=v=>/^\s*[=+@-]/.test(String(v??''))?"'"+v:String(v??'');const encode=vs=>vs.map(v=>'"'+safe(v).replaceAll('"','""')+'"').join(',');
  return '\uFEFF'+[encode(headers),...parsed.rows.map((r,i)=>{const x=results[i]||{status:'not_processed'};return encode([...parsed.headers.map(h=>r[h]),...keys.map(k=>typeof x[k]==='object'?JSON.stringify(x[k]):x[k]??'')]);})].join('\r\n')+'\r\n';
@@ -75,6 +75,7 @@ export async function searchLegalEntities(name,options={}){
 export async function confirmedObservation(base,entity,enrichDomain,signal){
  const draft=JSON.parse(JSON.stringify(base));draft.errors??=[];draft.conflicts??=[];
  for(const [key,value]of Object.entries(entity.fields||{})){
+ if(key==='identifiers'){const merged=mergeIdentifiers(draft[key],value);draft.identifiers=merged.value;draft.conflicts.push(...merged.conflicts);continue;}
  if(draft[key]&&draft[key]!==value)draft.conflicts.push({field:key,existing:draft[key],observed:value});else if(value)draft[key]=value;
  }
  draft.source=[draft.source,entity.source].filter(Boolean).join('\n');draft.checked_at=new Date().toISOString();draft.status='enriched';
@@ -92,3 +93,5 @@ export function retryDelayMs(value){const seconds=Number(value);return Number.is
 
 export function checkpointResults(results,inFlight){return results.map((r,i)=>i===inFlight?{...r,status:'not_processed'}:r);}
 export function retryWebsite(record,mapping,result){return (record[mapping.website]||result.website||'').trim();}
+
+export function mergeIdentifiers(existing,observed){const allowed=new Set(['siren','siret','org_number','business_id','ror','crossref_member','cnpj','fdic_cert','npi','sec_cik','ticker','nyc_camis','fsa_fhrsid','agency_slug']);const output={},conflicts=[];for(const text of [existing,observed]){if(!text)continue;let values;try{values=JSON.parse(text);}catch{throw Error('IDENTIFIERS_INVALID');}for(const[k,v]of Object.entries(values)){if(!allowed.has(k)||!['string','number'].includes(typeof v))continue;const value=String(v);if(output[k]&&output[k]!==value)conflicts.push({field:k,existing:output[k],observed:value});else output[k]=value;}}return{value:JSON.stringify(output),conflicts};}

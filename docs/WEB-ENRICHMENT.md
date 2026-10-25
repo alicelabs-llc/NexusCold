@@ -117,3 +117,37 @@ The crawler now defaults to five pages per confirmed site; PROSPECT_CRAWL_PAGES 
 set 1–10 within the same per-request timeout and robots/rate constraints. It cannot
 crawl millions of sites from GitHub Pages: a separately provisioned backend and
 search account are still necessary. The capability is not marked hosted or live.
+
+## Selectable public registries added after the public-apis review
+
+The source panel adds ten public adapters: France Recherche d’Entreprises,
+Norway Brønnøysund, Finland PRH/YTJ, ROR, Crossref, BrasilAPI CNPJ, FDIC, NYC
+Socrata restaurant business data, UK FSA establishments and Pick an Agency.
+Wikidata, GLEIF and Google DNS remain included. Source scopes and official docs
+are published in sources.json and described in docs/PUBLIC-APIS-REVIEW.md.
+
+Company-name lookups query those selected sources independently. A CNPJ lookup
+requires a supplied CNPJ column; it does not discover CNPJs by guessing. Sources
+return different fields: absence of a phone/email is not replaced by a generated
+contact. Officer/partner details, births, inspection scores and regulator contact
+information are not mapped into a company lead. Registry IDs remain separate
+from generic websites and source_status records the selected queries per row.
+
+All ten public adapters were checked against real JSON responses and CORS
+headers. This is a point-in-time verification, not an availability promise or a
+proof that every organization in a country is covered. The public-apis directory
+contains useful candidates but is not a live service or a guarantee of free,
+commercial, high-volume access. Optional server adapters (CMS NPI-2, SEC) remain
+disabled without a configured service and token; no paid account was opened.
+
+Each provider is paced, successful queries are cached for the job, schema errors
+are not cached as no-match, and a 429 pauses that source. Paused rows remain
+retryable on Continue. Changing sources or country scope requeues queries while
+preserving existing observations. Country conflicts stop cross-country branch
+merges and remain visible for review. Selecting a result never certifies legal
+identity or outreach permission.
+
+Pick an Agency is attributed with a profile link and CC BY 4.0 in the interface
+and per-row source_status export. Source data rights remain independent of the
+application's AL-1.0 license. For broad repeated OSM extraction, use a separately
+provisioned instance or dataset, not unrestricted bulk requests to public servers.

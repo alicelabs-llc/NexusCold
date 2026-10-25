@@ -71,3 +71,53 @@ async def test_web_index_discovery_requires_auth_and_configured_key(monkeypatch)
         r = await client.post('/api/discover', headers={'Authorization': 'Bearer '+'a'*32}, json={'company':'Example','city':''})
         assert r.status == 503
         assert await r.text() == 'web_search_not_configured'
+
+@pytest.mark.asyncio
+async def test_npi_returns_corporate_phone_without_officer_details():
+    import json
+    from enrichment_service import SESSION
+    class RegistrySession:
+        def get(self, url, **kwargs):
+            assert url == 'https://npiregistry.cms.hhs.gov/api/'
+            assert kwargs['params']['enumeration_type'] == 'NPI-2'
+            return Response(json.dumps({'results':[{'number':1234567890,'enumeration_type':'NPI-2',
+                'basic':{'organization_name':'Example Clinic','status':'A','authorized_official_first_name':'PRIVATE'},
+                'addresses':[{'address_purpose':'LOCATION','telephone_number':'5551234567','city':'Boston','country_code':'US'}],
+                'taxonomies':[{'primary':True,'desc':'Clinic'}]}]}))
+    async with TestClient(TestServer(create_app(token='a'*32))) as client:
+        client.app[SESSION] = RegistrySession()
+        r = await client.post('/api/registry/npi', headers={'Authorization':'Bearer '+'a'*32}, json={'company':'Example Clinic','city':''})
+        assert r.status == 200
+        data = await r.json()
+        assert data['candidates'][0]['fields']['phone'] == '5551234567'
+        assert 'PRIVATE' not in json.dumps(data)
+
+
+@pytest.mark.asyncio
+async def test_sec_dataset_is_cached_without_guessing_websites_or_active_status():
+    import json
+    from enrichment_service import SESSION
+    calls = []
+    class RegistrySession:
+        def get(self, url, **kwargs):
+            calls.append(url)
+            assert url == 'https://www.sec.gov/files/company_tickers.json'
+            return Response(json.dumps({'0':{'cik_str':789019,'title':'MICROSOFT CORP','ticker':'MSFT'}}))
+    async with TestClient(TestServer(create_app(token='a'*32))) as client:
+        client.app[SESSION] = RegistrySession()
+        for _ in range(2):
+            r = await client.post('/api/registry/sec', headers={'Authorization':'Bearer '+'a'*32}, json={'company':'Microsoft','city':''})
+            assert r.status == 200
+            fields = (await r.json())['candidates'][0]['fields']
+            assert json.loads(fields['identifiers'])['sec_cik'] == '0000789019'
+            assert 'website' not in fields and 'registry_status' not in fields
+        assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_registry_routes_require_auth_and_fixed_provider_allowlist():
+    async with TestClient(TestServer(create_app(token='a'*32))) as client:
+        r = await client.post('/api/registry/npi',json={'company':'Example','city':''})
+        assert r.status == 401
+        r = await client.post('/api/registry/arbitrary',headers={'Authorization':'Bearer '+'a'*32},json={'company':'Example','city':''})
+        assert r.status == 404
