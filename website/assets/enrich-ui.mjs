@@ -1,4 +1,4 @@
-import {domainOf,searchCompanies,searchLegalEntities,entityDetails,dnsProfile,exportEnrichment} from './enrich.mjs';
+import {domainOf,searchCompanies,searchLegalEntities,entityDetails,dnsProfile,exportEnrichment,confirmedObservation} from './enrich.mjs';
 export function mountEnrichment({container,getData,language='es'}){
  const en=language==='en';const t=(es,english)=>en?english:es;
  const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
@@ -24,10 +24,12 @@ export function mountEnrichment({container,getData,language='es'}){
  function rowView(index){const article=el('article');article.className='enrichment-row';const title=el('strong',(index+1)+'. '+(snapshot.rows[index][snapshot.mapping.company]||snapshot.rows[index][snapshot.mapping.website]||'—'));const state=el('span',t('Pendiente','Pending'));const info=el('p');const options=el('div');options.className='enrichment-candidates';article.append(title,state,info,options);rows.append(article);return{article,state,info,options};}
  function display(view,result){view.state.textContent=result.status;view.info.replaceChildren();for(const key of ['legal_name','lei','registry_status','website','email','phone','description','industry','country','founded','employees','mx','spf','dmarc'])if(result[key])view.info.append(el('span',key+': '+result[key]),el('br'));for(const url of (result.source||'').split('\n').filter(Boolean)){try{const u=new URL(url);if(u.protocol!=='https:'&&u.protocol!=='http:')continue;const a=el('a',t('Ver fuente ↗','View source ↗'));a.href=url;a.target='_blank';a.rel='noopener noreferrer';view.info.append(a,document.createTextNode(' '));}catch{}}if(result.errors?.length)view.info.append(el('span',result.errors.join('; ')));}
  async function applyEntity(index,entity,view,epoch,signal){
- const result=results[index];Object.assign(result,entity.fields);result.source=[result.source,entity.source].filter(Boolean).join('\n');result.checked_at=new Date().toISOString();result.status='enriched';
- const input=snapshot.rows[index],originalWebsite=input[snapshot.mapping.website];if(originalWebsite&&domainOf(originalWebsite)!==domainOf(result.website||'')){result.conflicts.push({field:'website',input:originalWebsite,observed:result.website});result.website=originalWebsite;}
- for(const key of ['email']){const old=input[snapshot.mapping[key]];if(old&&result[key]&&old!==result[key])result.conflicts.push({field:key,input:old,observed:result[key]});}
- await finishDomain(result,signal);if(epoch!==generation)return;view.options.replaceChildren();display(view,result);
+ const base=results[index];
+ const draft=await confirmedObservation(base,entity,finishDomain,signal);if(epoch!==generation)return;
+ const input=snapshot.rows[index];const old=input[snapshot.mapping.email];if(old&&draft.email&&old!==draft.email)draft.conflicts.push({field:'email',input:old,observed:draft.email});
+ results[index]=draft;
+ const provider=entity.provider||'Wikidata';for(const button of [...view.options.children])if(button.dataset.provider===provider)button.remove();
+ display(view,draft);
  }
  async function finishDomain(result,signal){
  const domain=domainOf(result.website||'');if(!domain)return;
@@ -46,7 +48,7 @@ export function mountEnrichment({container,getData,language='es'}){
  try{const candidates=[];if(company){for(const [provider,search]of [['Wikidata',searchCompanies],['GLEIF',searchLegalEntities]]){try{candidates.push(...await search(company,{signal,language}));}catch(e){if(signal.aborted)throw e;r.errors.push(provider+': '+e.message);}}}if(epoch!==generation)return;
  r.status=candidates.length?'needs_confirmation':website?'domain_checked':'no_match';
  // Never auto-attach a namesake to the input list. User explicitly selects an entity.
- for(const candidate of candidates){const b=el('button',candidate.label+' — '+candidate.description);b.type='button';b.className='button small';b.addEventListener('click',async()=>{if(running){progress.textContent=t('Espera a que termine la búsqueda de la lista.','Wait for list search to finish.');return;}const localEpoch=generation;const c=new AbortController();controller=c;running=true;run.disabled=true;stop.disabled=false;b.disabled=true;try{const entity=candidate.provider==='GLEIF'?candidate:await entityDetails(candidate.id,{signal:c.signal,language});if(localEpoch!==generation)return;await applyEntity(i,entity,view,localEpoch,c.signal);}catch(e){if(localEpoch===generation){r.errors.push(e.message);display(view,r);}}finally{if(localEpoch===generation){running=false;run.disabled=false;stop.disabled=true;b.disabled=false;}}});view.options.append(b);}
+ for(const candidate of candidates){const b=el('button',candidate.label+' — '+candidate.description);b.type='button';b.dataset.provider=candidate.provider||'Wikidata';b.className='button small';b.addEventListener('click',async()=>{if(running){progress.textContent=t('Espera a que termine la búsqueda de la lista.','Wait for list search to finish.');return;}const localEpoch=generation;const c=new AbortController();controller=c;running=true;run.disabled=true;stop.disabled=false;b.disabled=true;try{const entity=candidate.provider==='GLEIF'?candidate:await entityDetails(candidate.id,{signal:c.signal,language});if(localEpoch!==generation)return;await applyEntity(i,entity,view,localEpoch,c.signal);}catch(e){if(localEpoch===generation){results[i].errors.push(e.message);display(view,results[i]);}}finally{b.disabled=false;if(localEpoch===generation){running=false;run.disabled=false;stop.disabled=true;}}});view.options.append(b);}
  if(website)await finishDomain(r,signal);if(epoch!==generation)return;display(view,r);
  }catch(e){if(signal.aborted)break;r.status='source_error';r.errors.push(e.message);display(view,r);}
  download.disabled=false;

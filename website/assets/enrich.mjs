@@ -69,3 +69,13 @@ export async function searchLegalEntities(name,options={}){
  return {id:x.id,label:entity.legalName?.name||x.id,description:[address.city,address.country,entity.status].filter(Boolean).join(' · '),provider:'GLEIF',fields:{legal_name:entity.legalName?.name||'',lei:x.id,country:address.country||'',headquarters:[...(address.addressLines||[]),address.city,address.postalCode].filter(Boolean).join(', '),registry_status:entity.status||''},source:'https://api.gleif.org/api/v1/lei-records/'+x.id,checked_at:new Date().toISOString()};
  });
 }
+
+/** Prepare an isolated candidate result; callers commit only after every await. */
+export async function confirmedObservation(base,entity,enrichDomain,signal){
+ const draft=JSON.parse(JSON.stringify(base));draft.errors??=[];draft.conflicts??=[];
+ for(const [key,value]of Object.entries(entity.fields||{})){
+ if(draft[key]&&draft[key]!==value)draft.conflicts.push({field:key,existing:draft[key],observed:value});else if(value)draft[key]=value;
+ }
+ draft.source=[draft.source,entity.source].filter(Boolean).join('\n');draft.checked_at=new Date().toISOString();draft.status='enriched';
+ await enrichDomain(draft,signal);if(signal.aborted)throw Error('CANCELLED');return draft;
+}
