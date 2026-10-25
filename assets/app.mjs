@@ -1,4 +1,5 @@
 import {parseCSV,analyze,toCSV} from './csv.mjs';
+import {mountEnrichment} from './enrich-ui.mjs';
 const en=document.documentElement.lang==='en';
 const words=en?{
  none:'Not mapped',sample:'Fictional sample.csv',start:'Your file is processed in this tab. Explore with fictional sample data if you prefer.',ready:'Review complete. Confirm or change the column mapping below.',loading:'Reading the file locally…',noRows:'This file contains headers but no data records.',fileType:'Choose a .csv file encoded as UTF-8.',error:'Could not review this file. ',records:'Records',duplicates:'Duplicate candidates',invalid:'Format to review',missing:'No email',mismatch:'Domain difference',company:'No company',all:'Showing up to 20 rows. Export includes every record.',inconclusive:'Existing unknown/catch_all states remain inconclusive.',cleared:'File data cleared from this workspace.',statuses:{syntax_only:'Syntax only',invalid_syntax:'Review format',not_found:'No email',domain_mismatch:'Domain difference'},errors:{CSV_EMPTY:'The CSV is empty.',CSV_LIMIT:'Limit: 2 MiB, 10,000 records and 100 columns.',CSV_QUOTES:'Check quoted fields and escaped quotes.',CSV_HEADERS:'Use unique, non-empty column headers.',CSV_COLUMNS:'Every record must have the same number of columns.',CSV_MAPPING:'Choose existing columns.'}
@@ -13,12 +14,14 @@ const consent=document.getElementById('license-consent');const sourceLink=docume
 if(consent&&sourceLink){consent.addEventListener('change',()=>sourceLink.setAttribute('aria-disabled',String(!consent.checked)));sourceLink.addEventListener('click',event=>{if(!consent.checked)event.preventDefault();});}
 const fileInput=document.getElementById('csv-file');
 if(fileInput){
- let parsed=null,report=null,loadVersion=0;
+ let parsed=null,report=null,loadVersion=0,enrichment=null;
  const drop=document.getElementById('drop-zone'),message=document.getElementById('workspace-message');
  const mappingPanel=document.getElementById('mapping-panel'),resultsPanel=document.getElementById('results-panel');
  const names=['company','email','website','city'];const controls=Object.fromEntries(names.map(key=>[key,document.getElementById('map-'+key)]));
+ enrichment=mountEnrichment({container:document.querySelector('.workspace-inner'),getData:()=>({parsed,mapping:Object.fromEntries(names.map(key=>[key,controls[key].value]))}),language:en?'en':'es'});
+ enrichment.onSample(()=>load('company_name,email,website,city\nMicrosoft,,https://www.microsoft.com,Redmond\nMozilla,,https://www.mozilla.org,San Francisco\n',en?'Real companies.csv':'Empresas reales.csv'));
  function status(text,error=false){message.textContent=text;message.classList.toggle('error',error);}
- function reset(){loadVersion++;parsed=null;report=null;fileInput.value='';Object.values(controls).forEach(control=>control.replaceChildren());mappingPanel.hidden=true;resultsPanel.hidden=true;document.getElementById('result-rows').replaceChildren();document.getElementById('result-stats').replaceChildren();document.getElementById('file-name').textContent=en?'No file selected':'Sin archivo';}
+ function reset(){enrichment?.reset();loadVersion++;parsed=null;report=null;fileInput.value='';Object.values(controls).forEach(control=>control.replaceChildren());mappingPanel.hidden=true;resultsPanel.hidden=true;document.getElementById('result-rows').replaceChildren();document.getElementById('result-stats').replaceChildren();document.getElementById('file-name').textContent=en?'No file selected':'Sin archivo';}
  function element(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el;}
  function render(){
   if(!parsed)return;const mapping=Object.fromEntries(names.map(key=>[key,controls[key].value]));report=analyze(parsed,mapping);
@@ -52,7 +55,7 @@ if(fileInput){
  for(const type of ['dragenter','dragover'])drop.addEventListener(type,event=>{event.preventDefault();drop.classList.add('dragging');});
  for(const type of ['dragleave','drop'])drop.addEventListener(type,event=>{event.preventDefault();drop.classList.remove('dragging');});
  drop.addEventListener('drop',event=>readFile(event.dataTransfer.files[0]));
- Object.values(controls).forEach(control=>control.addEventListener('change',render));
+ Object.values(controls).forEach(control=>control.addEventListener('change',()=>{enrichment.reset();render();}));
  document.getElementById('load-sample').addEventListener('click',()=>load('company_name,email,website,city\nNorthline Studio,hello@northline.example,northline.example,Quito\nOrbit Works,sales@orbit,orbit.example,Medellín\nMono Supply,,mono.example,Lima\nNorthline Studio,hello@northline.example,northline.example,Quito\n',words.sample));
  document.getElementById('clear-data').addEventListener('click',()=>{reset();status(words.cleared);});
  document.getElementById('export-csv').addEventListener('click',()=>{if(!parsed||!report)return;const blob=new Blob([toCSV(parsed,report)],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=element('a');a.href=url;a.download='TechDigital-Prospect-review.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});

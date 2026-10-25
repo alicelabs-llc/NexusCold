@@ -10,6 +10,30 @@
   "license": "AL-1.0; desktop commercial use requires written authorization",
   "capabilities": [
     {
+      "id": "public_enrichment",
+      "runtime": "browser",
+      "network": true,
+      "sources": [
+        "Wikidata",
+        "GLEIF",
+        "Google Public DNS"
+      ],
+      "requires_explicit_authorization": true,
+      "identity_matching": "user_confirmation",
+      "max_rows_per_run": 100
+    },
+    {
+      "id": "website_contacts",
+      "runtime": "self_hosted_python",
+      "command": [
+        "python",
+        "enrichment_service.py"
+      ],
+      "authentication": "Bearer",
+      "endpoint": "/api/enrich",
+      "deployed": false
+    },
+    {
       "id": "browser_csv_review",
       "runtime": "browser",
       "network": false,
@@ -58,7 +82,7 @@
     }
   ],
   "not_implemented": [
-    "remote_enrichment_api",
+    "managed_enrichment_backend",
     "campaign_api",
     "multi_tenant_gateway",
     "native_mobile_app"
