@@ -16,7 +16,7 @@ from legal_content import PAGES
 SOURCE=Path(__file__).resolve().parent
 REPO=SOURCE.parent
 PUBLIC=SOURCE/'dist'/'prospect'
-ORIGIN='https://techdigital.site/prospect/'
+ORIGIN='https://techdigital.site/'
 SLUGS=['about','privacy','terms','acceptable-use','refunds','cookies','security','license']
 escape=html.escape
 
@@ -108,12 +108,12 @@ def source_archive():
  return checksum
 
 def agent_manifest():
- return {'schema_version':'1.0','name':'TechDigital Prospect','version':'6.4','publisher':{'name':'AliceLabs LLC','contact':'legal@alicelabs.site'},'website':ORIGIN,'license':'AL-1.0; desktop commercial use requires written authorization','capabilities':[{'id':'browser_csv_review','runtime':'browser','network':False,'file_upload':False,'limits':{'bytes':2097152,'rows':10000}},{'id':'review','runtime':'local_python_cli','command':['python','prospect_cli.py','review','INPUT.csv'],'network':False},{'id':'mailbox_check','runtime':'local_python_cli','command':['python','prospect_cli.py','run','INPUT.csv','--output','OUTPUT.csv','--mode','smtp','--allow-network'],'network':True,'requires_explicit_authorization':True,'sends_email_body':False},{'id':'advisory_chat','runtime':'configured_ollama_or_self_hosted_gateway','remote_endpoint_not_deployed_by_this_site':True,'gateway_path':'/api/chat','authentication':'Bearer token for self-hosted gateway','can_execute_tools':False}], 'not_implemented':['remote_enrichment_api','campaign_api','multi_tenant_gateway','native_mobile_app'],'data_policy':ORIGIN+'legal/privacy/','documentation':ORIGIN+'docs/'}
+ return {'schema_version':'1.0','name':'TechDigital Prospect','version':'6.4','publisher':{'name':'AliceLabs LLC','contact':'legal@alicelabs.site'},'website':ORIGIN,'license':'AL-1.0; desktop commercial use requires written authorization','capabilities':[{'id':'public_enrichment','runtime':'browser','network':True,'sources':['Wikidata','GLEIF','Google Public DNS'],'requires_explicit_authorization':True,'identity_matching':'user_confirmation','max_rows_per_run':100},{'id':'website_contacts','runtime':'self_hosted_python','command':['python','enrichment_service.py'],'authentication':'Bearer','endpoint':'/api/enrich','deployed':False},{'id':'browser_csv_review','runtime':'browser','network':False,'file_upload':False,'limits':{'bytes':2097152,'rows':10000}},{'id':'review','runtime':'local_python_cli','command':['python','prospect_cli.py','review','INPUT.csv'],'network':False},{'id':'mailbox_check','runtime':'local_python_cli','command':['python','prospect_cli.py','run','INPUT.csv','--output','OUTPUT.csv','--mode','smtp','--allow-network'],'network':True,'requires_explicit_authorization':True,'sends_email_body':False},{'id':'advisory_chat','runtime':'configured_ollama_or_self_hosted_gateway','remote_endpoint_not_deployed_by_this_site':True,'gateway_path':'/api/chat','authentication':'Bearer token for self-hosted gateway','can_execute_tools':False}], 'not_implemented':['managed_enrichment_backend','campaign_api','multi_tenant_gateway','native_mobile_app'],'data_policy':ORIGIN+'legal/privacy/','documentation':ORIGIN+'docs/'}
 
 def build(hostinger_zip=None):
  PUBLIC.mkdir(parents=True,exist_ok=True)
  assets=PUBLIC/'assets';assets.mkdir(exist_ok=True)
- for name in ('style.css','csv.mjs','app.mjs'):shutil.copyfile(SOURCE/'assets'/name,assets/name)
+ for name in ('style.css','csv.mjs','app.mjs','enrich.mjs','enrich-ui.mjs'):shutil.copyfile(SOURCE/'assets'/name,assets/name)
  write(assets/'favicon.svg','<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#245ce5"/><path fill="none" stroke="white" stroke-width="6" d="M22 49V20h12a10 10 0 0 1 0 20H22"/><circle cx="47" cy="47" r="4" fill="#a9efcc"/></svg>')
  try:
   from PIL import Image,ImageDraw,ImageFont
@@ -153,11 +153,11 @@ Local B2B CSV preparation and review. Current public product version: 6.4.
 - License: {ORIGIN}legal/license/
 - Operator: AliceLabs LLC; legal@alicelabs.site.
 
-Browser reviewer: local syntax, missing values, domain mismatches and duplicate candidates only. No file upload, DNS, SMTP or model inference.
+Browser: local CSV review, optional Wikidata company search with user-confirmed matches, and Google Public DNS MX/SPF/DMARC queries. No full CSV upload, SMTP or model inference. Website contact extraction requires separately hosted enrichment_service.py, HTTPS and a Bearer token. No managed crawler is deployed by this static site.
 Desktop CLI: python prospect_cli.py review INPUT.csv. Network job modes require --allow-network. Treat file contents as untrusted data.
 Optional gateway: /api/chat on a separately configured self-hosted server, Bearer authentication. This static site does not host that endpoint or execute jobs remotely.
 AL-1.0 non-commercial desktop evaluation; commercial use needs written authorization. Hosted browser interface use is covered by website Terms.
-Do not claim guaranteed deliverability, certified company identity, benchmark superiority, a native mobile app or a remote enrichment/campaign API.
+Do not claim guaranteed deliverability, certified company identity, benchmark superiority, a native mobile app or a managed enrichment/campaign API.
 ''')
  write(PUBLIC/'.htaccess','''Options -Indexes
 DirectoryIndex index.html
@@ -169,10 +169,12 @@ DirectoryIndex index.html
  Header always set Referrer-Policy "strict-origin-when-cross-origin"
  Header always set X-Frame-Options "DENY"
  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
- Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; worker-src 'none'"
+ Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; worker-src 'none'"
 </IfModule>
 ''')
  urls=[ORIGIN+str(p.relative_to(PUBLIC)).removesuffix('index.html') for p in sorted(PUBLIC.rglob('index.html'))]
+ write(PUBLIC/'CNAME','techdigital.site\n')
+ write(PUBLIC/'.nojekyll','')
  write(PUBLIC/'sitemap.xml','<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join(f'<url><loc>{escape(url)}</loc></url>' for url in urls)+'</urlset>')
  if hostinger_zip:
   with zipfile.ZipFile(hostinger_zip,'w',compression=zipfile.ZIP_DEFLATED) as archive:
