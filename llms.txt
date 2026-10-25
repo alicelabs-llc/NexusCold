@@ -2,11 +2,11 @@
 
 Local B2B CSV preparation and review. Current public product version: 6.4.
 
-- Website: https://prospect.techdigital.site/
-- Human documentation: https://prospect.techdigital.site/docs/
-- Capability manifest: https://prospect.techdigital.site/agent.json
-- Privacy: https://prospect.techdigital.site/legal/privacy/
-- License: https://prospect.techdigital.site/legal/license/
+- Website: https://techdigital.site/
+- Human documentation: https://techdigital.site/docs/
+- Capability manifest: https://techdigital.site/agent.json
+- Privacy: https://techdigital.site/legal/privacy/
+- License: https://techdigital.site/legal/license/
 - Operator: AliceLabs LLC; legal@alicelabs.site.
 
 Browser reviewer: local syntax, missing values, domain mismatches and duplicate candidates only. No file upload, DNS, SMTP or model inference.

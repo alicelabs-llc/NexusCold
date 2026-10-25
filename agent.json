@@ -6,7 +6,7 @@
     "name": "AliceLabs LLC",
     "contact": "legal@alicelabs.site"
   },
-  "website": "https://prospect.techdigital.site/",
+  "website": "https://techdigital.site/",
   "license": "AL-1.0; desktop commercial use requires written authorization",
   "capabilities": [
     {
@@ -63,6 +63,6 @@
     "multi_tenant_gateway",
     "native_mobile_app"
   ],
-  "data_policy": "https://prospect.techdigital.site/legal/privacy/",
-  "documentation": "https://prospect.techdigital.site/docs/"
+  "data_policy": "https://techdigital.site/legal/privacy/",
+  "documentation": "https://techdigital.site/docs/"
 }
