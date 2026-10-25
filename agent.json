@@ -16,8 +16,19 @@
       "sources": [
         "Wikidata",
         "GLEIF",
-        "Google Public DNS"
+        "Google Public DNS",
+        "France · Recherche d’Entreprises",
+        "Noruega · Brønnøysund",
+        "Finlandia · PRH / YTJ",
+        "ROR · Organizaciones y empresas de investigación",
+        "Crossref · Editoriales",
+        "BrasilAPI · CNPJ",
+        "EE. UU. · FDIC / Bancos",
+        "Nueva York · Socrata / Restaurantes",
+        "Reino Unido · Food Standards Agency",
+        "Pick an Agency · Agencias de marketing"
       ],
+      "source_catalog": "https://techdigital.site/sources.json",
       "requires_explicit_authorization": true,
       "identity_matching": "unique_exact_organization_otherwise_user_confirmation",
       "max_rows_per_run": 10000

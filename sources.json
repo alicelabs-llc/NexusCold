@@ -1,0 +1,113 @@
+[
+  {
+    "id": "france",
+    "label": "France · Recherche d’Entreprises",
+    "country": "FR",
+    "scope": "Razón social, SIREN/SIRET, dirección, actividad, estado",
+    "host": "recherche-entreprises.api.gouv.fr",
+    "docs": "https://recherche-entreprises.api.gouv.fr/docs/",
+    "minMs": 300
+  },
+  {
+    "id": "norway",
+    "label": "Noruega · Brønnøysund",
+    "country": "NO",
+    "scope": "Sitio, teléfono/correo publicados, dirección, sector, empleados",
+    "host": "data.brreg.no",
+    "docs": "https://www.brreg.no/en/use-of-data-from-the-bronnoysund-register-centre/datasets-and-api/data-about-organisations/",
+    "minMs": 300
+  },
+  {
+    "id": "finland",
+    "label": "Finlandia · PRH / YTJ",
+    "country": "FI",
+    "scope": "Identificador, sitio, dirección y actividad registrada",
+    "host": "avoindata.prh.fi",
+    "docs": "https://avoindata.prh.fi/en/ytj/swagger-ui",
+    "minMs": 500
+  },
+  {
+    "id": "ror",
+    "label": "ROR · Organizaciones y empresas de investigación",
+    "country": "",
+    "scope": "Nombre, sitio, país, ciudad, sector, año e ID ROR",
+    "host": "api.ror.org",
+    "docs": "https://ror.readme.io/docs/rest-api",
+    "minMs": 300
+  },
+  {
+    "id": "crossref",
+    "label": "Crossref · Editoriales",
+    "country": "",
+    "scope": "Editorial, ubicación e identificador de miembro; no correos",
+    "host": "api.crossref.org",
+    "docs": "https://www.crossref.org/documentation/retrieve-metadata/rest-api/",
+    "minMs": 600
+  },
+  {
+    "id": "brasil",
+    "label": "BrasilAPI · CNPJ",
+    "country": "BR",
+    "scope": "Requiere columna CNPJ: razón social, teléfono, dirección y actividad",
+    "host": "brasilapi.com.br",
+    "docs": "https://brasilapi.com.br/docs",
+    "requiresId": "cnpj",
+    "minMs": 1000
+  },
+  {
+    "id": "fdic",
+    "label": "EE. UU. · FDIC / Bancos",
+    "country": "US",
+    "scope": "Bancos asegurados: sitio, dirección, estado e identificador FDIC",
+    "host": "banks.data.fdic.gov",
+    "docs": "https://api.fdic.gov/banks/docs/",
+    "minMs": 400
+  },
+  {
+    "id": "nyc",
+    "label": "Nueva York · Socrata / Restaurantes",
+    "country": "US",
+    "scope": "Negocio, teléfono y dirección de establecimientos; sin datos de inspección",
+    "host": "data.cityofnewyork.us",
+    "docs": "https://dev.socrata.com/foundry/data.cityofnewyork.us/43nn-pn8j",
+    "minMs": 500
+  },
+  {
+    "id": "fsa",
+    "label": "Reino Unido · Food Standards Agency",
+    "country": "GB",
+    "scope": "Negocio, teléfono publicado, dirección e ID de establecimiento",
+    "host": "api.ratings.food.gov.uk",
+    "docs": "https://api.ratings.food.gov.uk/help",
+    "minMs": 600
+  },
+  {
+    "id": "agency",
+    "label": "Pick an Agency · Agencias de marketing",
+    "country": "",
+    "scope": "Sitio, servicios, ubicación y tamaño reportado. Atribución CC BY 4.0.",
+    "host": "www.pickanagency.com",
+    "docs": "https://www.pickanagency.com/developers",
+    "minMs": 600
+  },
+  {
+    "id": "npi",
+    "label": "EE. UU. · CMS NPI / Clínicas",
+    "country": "US",
+    "scope": "Organizaciones sanitarias: teléfono y dirección. Requiere servidor.",
+    "host": "npiregistry.cms.hhs.gov",
+    "docs": "https://npiregistry.cms.hhs.gov/api-page",
+    "server": true,
+    "minMs": 1000
+  },
+  {
+    "id": "sec",
+    "label": "SEC · Empresas cotizadas en EE. UU.",
+    "country": "",
+    "scope": "Empresa, ticker y CIK. Requiere servidor.",
+    "host": "www.sec.gov",
+    "docs": "https://www.sec.gov/about/developer-resources",
+    "server": true,
+    "minMs": 1000
+  }
+]

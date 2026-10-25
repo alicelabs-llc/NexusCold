@@ -1,5 +1,5 @@
-import {parseCSV,analyze,toCSV} from './csv.mjs?v=90b81772f050';
-import {mountEnrichment} from './enrich-ui.mjs?v=90b81772f050';
+import {parseCSV,analyze,toCSV} from './csv.mjs?v=78bb7708d4ba';
+import {mountEnrichment} from './enrich-ui.mjs?v=78bb7708d4ba';
 const en=document.documentElement.lang==='en';
 const words=en?{
  none:'Not mapped',sample:'Fictional sample.csv',start:'Your file is processed in this tab. Explore with fictional sample data if you prefer.',ready:'Review complete. Confirm or change the column mapping below.',loading:'Reading the file locally…',noRows:'This file contains headers but no data records.',fileType:'Choose a .csv file encoded as UTF-8.',error:'Could not review this file. ',records:'Records',duplicates:'Duplicate candidates',invalid:'Format to review',missing:'No email',mismatch:'Domain difference',company:'No company',all:'Showing up to 20 rows. Export includes every record.',inconclusive:'Existing unknown/catch_all states remain inconclusive.',cleared:'File data cleared from this workspace.',statuses:{syntax_only:'Syntax only',invalid_syntax:'Review format',not_found:'No email',domain_mismatch:'Domain difference'},errors:{CSV_EMPTY:'The CSV is empty.',CSV_LIMIT:'Limit: 2 MiB, 10,000 records and 100 columns.',CSV_QUOTES:'Check quoted fields and escaped quotes.',CSV_HEADERS:'Use unique, non-empty column headers.',CSV_COLUMNS:'Every record must have the same number of columns.',CSV_MAPPING:'Choose existing columns.'}
