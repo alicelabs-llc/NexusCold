@@ -61,3 +61,13 @@ async def test_robots_denies_scrape_and_never_follows_redirect():
     assert result['errors'] == ['robots_disallowed']
     assert len(calls) == 1
     assert calls[0][1]['allow_redirects'] is False
+
+@pytest.mark.asyncio
+async def test_web_index_discovery_requires_auth_and_configured_key(monkeypatch):
+    monkeypatch.delenv('BRAVE_SEARCH_API_KEY', raising=False)
+    async with TestClient(TestServer(create_app(token='a'*32))) as client:
+        r = await client.post('/api/discover', json={'company': 'Example', 'city': ''})
+        assert r.status == 401
+        r = await client.post('/api/discover', headers={'Authorization': 'Bearer '+'a'*32}, json={'company':'Example','city':''})
+        assert r.status == 503
+        assert await r.text() == 'web_search_not_configured'

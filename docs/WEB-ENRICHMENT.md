@@ -3,9 +3,9 @@
 ## In the published browser workspace
 
 Load a CSV, map company and website columns, accept the network notice and click
-**Enriquecer lista**. Up to 100 selected rows are queried sequentially per run.
+**Enriquecer lista**. Up to 10,000 selected rows are queried sequentially per run.
 Wikidata returns candidate entities; GLEIF returns legal entities with LEIs.
-Confirm the actual company before attaching its observed fields. A name alone is
+Ambiguous identities need confirmation; supported unique exact organization matches may be attached automatically. A name alone is
 not identity proof. Missing data is left empty. Provider failures remain visible.
 
 For supplied or confirmed websites, Google Public DNS returns MX, SPF and DMARC
@@ -45,7 +45,7 @@ enter your HTTPS service origin and token. They remain only in the current tab.
 The endpoint POST /api/enrich accepts one website, a Bearer token and the configured
 Origin. It returns published mailto/tel links, description and source URLs. It has:
 actual public-IP DNS validation; no redirects; robots.txt checks (fail closed on
-unavailable policy except 404); same-origin crawl; 3-page and 512 KB/page bounds;
+unavailable policy except 404); same-origin crawl; 5-page default (configurable up to 10) and 512 KB/page bounds;
 35s job timeout; at most 2 concurrent jobs and 20 starts/minute per instance.
 No access logs, contact cache or job database are enabled by this service. Hosting
 providers may still collect infrastructure logs. Use per-user tokens/quotas and
@@ -71,3 +71,49 @@ This is file enrichment, not an Apollo-sized private contact database. Small
 businesses absent from public registries need a supplied website plus the crawler
 or a separately licensed discovery provider. SMTP validation remains available in
 the desktop operator. Do not call missing contact data a verified lead.
+
+## Bulk lists and downloads
+
+The workspace accepts up to 10,000 CSV rows (2 MiB input). The run count follows the loaded list; set 100 for a demo.
+Paste company names one per line if no CSV exists. Names are company names, not
+an employee/person finder. Individual queries are paced and exact repeated
+queries reuse session results. A 1,000-row input is not a promise of 1,000 found
+contacts. Timing and coverage depend on provider limits and available sources.
+
+Stop retains results; Continue skips completed rows and retries unfinished/error
+rows. Export is always available for the current list, including unprocessed rows.
+JSON exports include a resumable copy of input, mapping and observations; importing
+one restores the job without storing a token. JSON/CSV/XLSX copies are plain files
+containing your data, not encrypted backups. Provider candidate choices for
+ambiguous pending rows are searched again when resuming a JSON checkpoint.
+
+A unique normalized exact Wikidata label may be applied automatically only when
+the entity has a supported organization classification and an observed website;
+a supplied conflicting domain prevents automatic attachment. Ambiguous candidates
+require confirmation. This is a matching heuristic, not certified company identity.
+
+Download choices: formatted Excel XLSX, ordered CSV, TSV, JSON checkpoint and raw
+CSV audit. Order can follow the input, company name or country plus company.
+Excel has Contactos and Original sheets, readable widths, a colored frozen header,
+alternating row fills and autofilters. All cells are explicit text to preserve IDs,
+phone numbers and untrusted input without formula execution. CSV/TSV formula-like
+values are escaped. Cells beyond Excel's 32,767-character limit require CSV/JSON.
+
+## Broader discovery through a web search index
+
+The authenticated service also supports POST /api/discover with company and city.
+Set BRAVE_SEARCH_API_KEY in the server secret settings to activate it. The browser
+never receives that key. With the service connected, rows without a website get
+up to ten web-index candidates; the user confirms the relevant company website,
+then the crawler extracts published contacts. The search index covers many sites,
+but a bounded query does not visit every page on the internet or guarantee recall.
+
+Brave requires an account and active plan. Its current pricing offers monthly
+credits, not unlimited free searches. No account, plan or paid quota was activated
+by this implementation. Configure an explicit provider spending limit before use.
+Official documentation: https://api-dashboard.search.brave.com/documentation/pricing
+and https://api-dashboard.search.brave.com/api-reference/web/search/get .
+The crawler now defaults to five pages per confirmed site; PROSPECT_CRAWL_PAGES can
+set 1–10 within the same per-request timeout and robots/rate constraints. It cannot
+crawl millions of sites from GitHub Pages: a separately provisioned backend and
+search account are still necessary. The capability is not marked hosted or live.

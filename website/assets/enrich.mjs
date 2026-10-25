@@ -32,7 +32,8 @@ export async function entityDetails(id,options={}){
  const li=first('P4264');if(typeof li==='string'&&/^[a-zA-Z0-9_-]+$/.test(li))set('linkedin','https://www.linkedin.com/company/'+li);
  const related=[['industry','P452'],['country','P17'],['headquarters','P159']].map(([k,p])=>[k,first(p)?.id]).filter(([,v])=>/^Q\d+$/.test(v||''));
  if(related.length){const labels=await jsonGet(api({action:'wbgetentities',ids:[...new Set(related.map(x=>x[1]))].join('|'),props:'labels',languages:'es|en'}),options);for(const[k,v]of related)set(k,labels.entities?.[v]?.labels?.[options.language||'es']?.value||labels.entities?.[v]?.labels?.en?.value);}
- return {id,label:entity.labels?.[options.language||'es']?.value||entity.labels?.en?.value||id,fields,source:'https://www.wikidata.org/wiki/'+id,checked_at:new Date().toISOString(),note:'Public observations; may be historical or incomplete. Not mailbox verification.'};
+ const organization=values('P31').some(x=>['Q4830453','Q783794','Q6881511','Q43229','Q891723','Q79913','Q163740','Q161726'].includes(x?.id));
+ return {organization,id,label:entity.labels?.[options.language||'es']?.value||entity.labels?.en?.value||id,fields,source:'https://www.wikidata.org/wiki/'+id,checked_at:new Date().toISOString(),note:'Public observations; may be historical or incomplete. Not mailbox verification.'};
 }
 export async function dnsProfile(domain,options={}){
  if(domainOf(domain)!==domain)throw Error('DOMAIN_INVALID');
@@ -79,3 +80,15 @@ export async function confirmedObservation(base,entity,enrichDomain,signal){
  draft.source=[draft.source,entity.source].filter(Boolean).join('\n');draft.checked_at=new Date().toISOString();draft.status='enriched';
  await enrichDomain(draft,signal);if(signal.aborted)throw Error('CANCELLED');return draft;
 }
+
+export function exactCompanyCandidate(name,candidates){
+ const norm=v=>String(v).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/\b(incorporated|inc|corporation|corp|llc|ltd|limited|sa|srl)\b/g,'').replace(/[^a-z0-9]/g,'');
+ const matches=candidates.filter(c=>!c.provider&&norm(c.label)===norm(name));return matches.length===1?matches[0]:null;
+}
+
+export function pauseIncompleteRow(results,index){if(index>=0&&results[index])results[index].status='not_processed';}
+export function recordInputConflicts(result,record,mapping){const old=record[mapping.email];if(old&&result.email&&old!==result.email&&!result.conflicts.some(c=>c.field==='email'&&c.input===old&&c.observed===result.email))result.conflicts.push({field:'email',input:old,observed:result.email});return result;}
+export function retryDelayMs(value){const seconds=Number(value);return Number.isFinite(seconds)&&seconds>=0?Math.max(1000,Math.min(300000,seconds*1000)):60000;}
+
+export function checkpointResults(results,inFlight){return results.map((r,i)=>i===inFlight?{...r,status:'not_processed'}:r);}
+export function retryWebsite(record,mapping,result){return (record[mapping.website]||result.website||'').trim();}

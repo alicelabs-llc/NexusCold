@@ -81,7 +81,8 @@ async def crawl_site(session, website):
     queue = [website]
     visited = set()
     fields, sources, errors = {}, [], []
-    while queue and len(visited) < 3:
+    page_limit=max(1,min(10,int(os.environ.get('PROSPECT_CRAWL_PAGES','5'))))
+    while queue and len(visited) < page_limit:
         url = queue.pop(0)
         if url in visited:
             continue
@@ -158,7 +159,7 @@ def create_app(*, token=None, allowed_origin=None, crawler=crawl_site):
 
     async def health(request):
         return web.json_response({'status': 'ready', 'capabilities': ['published_website_contacts'],
-                                  'pages_per_request': 3, 'authentication': 'bearer_required'})
+                                  'pages_per_request': max(1,min(10,int(os.environ.get('PROSPECT_CRAWL_PAGES','5')))), 'web_search': 'brave' if os.environ.get('BRAVE_SEARCH_API_KEY') else 'not_configured', 'authentication': 'bearer_required'})
 
     async def enrich(request):
         nonlocal active
@@ -187,11 +188,58 @@ def create_app(*, token=None, allowed_origin=None, crawler=crawl_site):
         finally:
             active -= 1
 
+    async def discover(request):
+        nonlocal active
+        if not hmac.compare_digest(request.headers.get('Authorization', '').encode(), ('Bearer ' + token).encode()):
+            raise web.HTTPUnauthorized(text='authentication_required')
+        key = os.environ.get('BRAVE_SEARCH_API_KEY', '')
+        if not key:
+            raise web.HTTPServiceUnavailable(text='web_search_not_configured')
+        try:
+            data = await request.json()
+            if not isinstance(data, dict) or set(data) != {'company', 'city'}:
+                raise ValueError()
+            if not all(isinstance(data[k], str) and len(data[k]) <= 150 for k in data) or not data['company'].strip():
+                raise ValueError()
+        except (ValueError, TypeError, UnicodeError):
+            raise web.HTTPBadRequest(text='bounded_company_city_required') from None
+        now = time.monotonic()
+        while arrivals and arrivals[0] < now - 60:
+            arrivals.popleft()
+        if active >= 2 or len(arrivals) >= 20:
+            raise web.HTTPTooManyRequests(headers={'Retry-After': '60'})
+        arrivals.append(now)
+        active += 1
+        try:
+            async with app[SESSION].get('https://api.search.brave.com/res/v1/web/search',
+                    params={'q': data['company'] + ' ' + data['city'] + ' official contact', 'count': '10'},
+                    headers={'X-Subscription-Token': key, 'Accept': 'application/json'}, allow_redirects=False) as response:
+                if response.status != 200:
+                    raise web.HTTPBadGateway(text='search_provider_http_' + str(response.status))
+                payload = json.loads(await read_bounded(response))
+            candidates = []
+            for item in payload.get('web', {}).get('results', [])[:10]:
+                url = item.get('url', '')
+                if not public_http_url(url):
+                    continue
+                target = urlsplit(url)
+                candidates.append({'id': url, 'provider': 'Web', 'label': str(item.get('title', ''))[:200],
+                    'description': str(item.get('description', ''))[:500], 'fields': {'website': target.scheme + '://' + target.netloc},
+                    'source': url})
+            return web.json_response({'candidates': candidates, 'provider': 'Brave Search',
+                                      'scope': 'web_index_top_results_not_entire_internet'})
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
+            raise web.HTTPBadGateway(text='search_provider_unavailable') from None
+        finally:
+            active -= 1
+
     app.router.add_get('/health', health)
     app.router.add_post('/api/enrich', enrich)
+    app.router.add_post('/api/discover', discover)
     async def options(request):
         return web.Response(status=204)
     app.router.add_options('/api/enrich', options)
+    app.router.add_options('/api/discover', options)
     return app
 
 
