@@ -19,6 +19,7 @@ if(fileInput){
  const mappingPanel=document.getElementById('mapping-panel'),resultsPanel=document.getElementById('results-panel');
  const names=['company','email','website','city'];const controls=Object.fromEntries(names.map(key=>[key,document.getElementById('map-'+key)]));
  enrichment=mountEnrichment({container:document.querySelector('.workspace-inner'),getData:()=>({parsed,mapping:Object.fromEntries(names.map(key=>[key,controls[key].value]))}),language:en?'en':'es'});
+ enrichment.onNames(names=>load('company_name\n'+names.map(name=>'"'+name.replaceAll('"','""')+'"').join('\n'),en?'Company names.csv':'Nombres de empresas.csv'));
  enrichment.onSample(()=>load('company_name,email,website,city\nMicrosoft,,https://www.microsoft.com,Redmond\nMozilla,,https://www.mozilla.org,San Francisco\n',en?'Real companies.csv':'Empresas reales.csv'));
  function status(text,error=false){message.textContent=text;message.classList.toggle('error',error);}
  function reset(){enrichment?.reset();loadVersion++;parsed=null;report=null;fileInput.value='';Object.values(controls).forEach(control=>control.replaceChildren());mappingPanel.hidden=true;resultsPanel.hidden=true;document.getElementById('result-rows').replaceChildren();document.getElementById('result-stats').replaceChildren();document.getElementById('file-name').textContent=en?'No file selected':'Sin archivo';}
@@ -40,7 +41,7 @@ if(fileInput){
   resultsPanel.hidden=false;status(parsed.rows.length?words.ready:words.noRows);
  }
  function load(text,name){
-  reset();parsed=parseCSV(text);document.getElementById('file-name').textContent=name;
+  reset();parsed=parseCSV(text);enrichment.setRowCount(parsed.rows.length);document.getElementById('file-name').textContent=name;
   const initial=analyze(parsed).mapping;
   for(const key of names){const control=controls[key];control.replaceChildren();const empty=element('option',words.none);empty.value='';control.append(empty);for(const header of parsed.headers){const option=element('option',header);option.value=header;control.append(option);}control.value=initial[key];}
   mappingPanel.hidden=false;render();
